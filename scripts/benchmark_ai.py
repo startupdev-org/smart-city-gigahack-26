@@ -45,8 +45,8 @@ def access_token(base: str) -> str:
     token = os.environ.get("CIVICAI_TOKEN", "").strip()
     if token:
         return token
-    email = os.environ.get("CIVICAI_EMAIL", "").strip()
-    password = os.environ.get("CIVICAI_PASSWORD", "")
+    email = "admin@civic.ai".strip()
+    password = "admin123".strip()
     if not email or not password:
         raise ValueError("Set CIVICAI_TOKEN or CIVICAI_EMAIL and CIVICAI_PASSWORD")
     return request_json(
