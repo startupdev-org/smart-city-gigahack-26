@@ -1,0 +1,124 @@
+{
+  "root": {
+    "name": "CivicAI",
+    "phase": "pgvector+auth+admin+crawler",
+    "endpoints": [
+      "/api/health",
+      "/api/search",
+      "POST /api/chat",
+      "POST /api/crawl/start",
+      "POST /api/auth/login",
+      "POST /api/auth/register",
+      "GET /api/admin/stats",
+      "GET /api/admin/cost",
+      "POST /api/feedback/public"
+    ]
+  },
+  "login": {
+    "status": 200,
+    "body": {
+      "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiZW1haWwiOiJhZG1pbkBjaXZpYy5haSIsInJvbGUiOiJhZG1pbiIsImV4cCI6MTc5MDQ2MDQ5Nn0.lM12qOu2Fsph0eO2-cKF96P-Tk6Szkcc-9LgjJqnedk",
+      "token_type": "bearer",
+      "role": "admin",
+      "email": "admin@civic.ai"
+    }
+  },
+  "stats": {
+    "documents": 11,
+    "chunks": 60,
+    "sources": 20,
+    "changes": 0,
+    "searches": 8,
+    "feedback_total": 0,
+    "feedback_useful_pct": null,
+    "pgvector": true,
+    "last_crawl": "2026-09-26T12:54:29.689746+03:00"
+  },
+  "cost": {
+    "assumptions": {
+      "questions_per_month": 10000,
+      "avg_input_tokens": 1200,
+      "avg_output_tokens": 350
+    },
+    "self_hosted": {
+      "model": "qwen3:8b via Ollama",
+      "hardware": "RTX 3070 · this PC",
+      "deploy_location": "local Chișinău",
+      "llm_cost_usd": 0,
+      "notes": "Electricity / GPU wear only"
+    },
+    "cloud_fallback": {
+      "model": "GPT-5 mini (estimate)",
+      "llm_cost_usd": 10.0,
+      "gpu_cost_usd": 0
+    },
+    "recommendation": "Prefer self-hosted for corpus Q&A; keep cloud as fallback only."
+  },
+  "chat_term": {
+    "status_code": 200,
+    "data": {
+      "status": "conflict",
+      "answer": "⚠️ Documentele disponibile conțin informații contradictorii privind termenul.\n\nTermenul pentru autorizatia de construire este menționat în două surse cu valori diferite: 20 zile lucrătoare (Dispoziția Primarului nr. 412/2025) și 30 zile lucrătoare (Regulamentul privind autorizarea construcțiilor).",
+      "sources": [
+        {
+          "document": "Dispoziția Primarului nr. 412/2025 privind termenele de eliberare a autorizațiilor",
+          "page": 1,
+          "section": null,
+          "quote": "termenul de examinare a cererilor pentru autorizația de construire este de 20 zile lucrătoare de la înregistrarea dosarului complet",
+          "url": "https://www.chisinau.md/ro/acteoficiale/dispozitia-412-2025"
+        },
+        {
+          "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+          "page": 3,
+          "section": null,
+          "quote": "Cererea pentru eliberarea autorizației de construire se examinează în termen de 30 zile lucrătoare de la data înregistrării dosarului complet",
+          "url": "https://dgaurf.md/regulament-autorizare-constructii"
+        }
+      ],
+      "next_action": {
+        "label": "Detalii de la DGAURF",
+        "url": "https://dgaurf.md/",
+        "contact": "+373 22 20 15 05 · primaria@pmc.md"
+      },
+      "confidence": "high",
+      "language": "ro",
+      "evidence_preview": [
+        {
+          "document": "Dispoziția Primarului nr. 412/2025 privind termenele de eliberare a autorizațiilor",
+          "page": 1,
+          "section": null,
+          "quote": "DISPOZIȚIA PRIMARULUI nr. 412 din 15 martie 2025\nCu privire la optimizarea termenelor de eliberare a autorizațiilor de construire\n\nArt. 1. Se stabilește că termenul de examinare a cererilor pentru autorizația de construire este de 20 zile lucrătoare de la înregistrarea dosarului complet.\nArt. 2. Prevederile prezentei dispoziții se aplică începând cu data publicării.\nArt. 3. Direcția Generală Arhit",
+          "url": "https://www.chisinau.md/ro/acteoficiale/dispozitia-412-2025"
+        },
+        {
+          "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+          "page": 3,
+          "section": null,
+          "quote": "Capitolul 3. Termene\nSecțiunea 3.2. Termenul de examinare\nCererea pentru eliberarea autorizației de construire se examinează în termen de 30 zile lucrătoare de la data înregistrării dosarului complet.\nÎn cazul dosarelor incomplete, termenul începe să curgă de la data completării.",
+          "url": "https://dgaurf.md/regulament-autorizare-constructii"
+        },
+        {
+          "document": "Ghidul cetățeanului — Certificate și Autorizații",
+          "page": 1,
+          "section": null,
+          "quote": "Ghidul cetățeanului privind certificatele și autorizațiile municipale\n\n1. Autorizația de construire\nPașii pentru obținerea autorizației de construire:\nPasul 1. Obțineți certificatul de urbanism.\nPasul 2. Pregătiți proiectul de execuție.\nPasul 3. Colectați avizele necesare.\nPasul 4. Depuneți dosarul complet la DGAURF sau online.\nPasul 5. Ridicați autorizația după emitere.\n\n2. Unde depuneți\nPortalul",
+          "url": "https://www.chisinau.md/ro/transparenta"
+        },
+        {
+          "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+          "page": 2,
+          "section": null,
+          "quote": "Capitolul 2. Acte necesare\nSecțiunea 2.1. Dosarul solicitantului\nPentru obținerea autorizației de construire, solicitantul depune următoarele acte:\n1. Cerere tip, completată și semnată.\n2. Buletinul de identitate al solicitantului (copie).\n3. Extrasul din Registrul bunurilor imobile.\n4. Certificatul de urbanism.\n5. Proiectul de execuție, semnat de proiectant autorizat.\n6. Avizele prevăzute în cert",
+          "url": "https://dgaurf.md/regulament-autorizare-constructii"
+        },
+        {
+          "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+          "page": 1,
+          "section": null,
+          "quote": "REGULAMENTUL privind autorizarea construcțiilor în municipiul Chișinău\n\nCapitolul 1. Dispoziții generale\nArt. 1. Prezentul regulament stabilește procedura de eliberare a autorizației de construire pe teritoriul municipiului Chișinău.\nArt. 2. Autorizația de construire se eliberează de Direcția Generală Arhitectură, Urbanism și Relații Funciare (DGAURF).",
+          "url": "https://dgaurf.md/regulament-autorizare-constructii"
+        }
+      ]
+    }
+  }
+}

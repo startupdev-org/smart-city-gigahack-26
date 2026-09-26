@@ -1,0 +1,153 @@
+[
+  {
+    "q": "Ce acte sunt necesare pentru autorizatia de construire?",
+    "status": "supported",
+    "answer": "Pentru obținerea autorizației de construire, solicitantul trebuie să depună următoarele acte:\n1. Cerere tip, completată și semnată.\n2. Buletinul de identitate al solicitantului (copie).\n3. Extrasul din Registrul bunurilor imobile.\n4. Certificatul de urbanism.\n5. Proiectul de execuție, semnat de proiectant autorizat.\n6. Avizele prevăzute în certificatul de urbanism.",
+    "sources": [
+      {
+        "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+        "page": 2,
+        "section": "None",
+        "quote": "Pentru obținerea autorizației de construire, solicitantul depune următoarele acte:",
+        "url": "https://dgaurf.md/regulament-autorizare-constructii"
+      }
+    ],
+    "next_action": null,
+    "confidence": "high",
+    "language": "ro",
+    "evidence_preview": [
+      {
+        "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+        "page": 2,
+        "section": null,
+        "quote": "Capitolul 2. Acte necesare\nSecțiunea 2.1. Dosarul solicitantului\nPentru obținerea autorizației de construire, solicitantul depune următoarele acte:\n1. Cerere tip, completată și semnată.\n2. Buletinul de identitate al solicitantului (copie).\n3. Extrasul din Registrul bunurilor imobile.\n4. Certificatul de urbanism.\n5. Proiectul de execuție, semnat de proiectant autorizat.\n6. Avizele prevăzute în cert",
+        "url": "https://dgaurf.md/regulament-autorizare-constructii"
+      },
+      {
+        "document": "Ghidul cetățeanului — Certificate și Autorizații",
+        "page": 1,
+        "section": null,
+        "quote": "Ghidul cetățeanului privind certificatele și autorizațiile municipale\n\n1. Autorizația de construire\nPașii pentru obținerea autorizației de construire:\nPasul 1. Obțineți certificatul de urbanism.\nPasul 2. Pregătiți proiectul de execuție.\nPasul 3. Colectați avizele necesare.\nPasul 4. Depuneți dosarul complet la DGAURF sau online.\nPasul 5. Ridicați autorizația după emitere.\n\n2. Unde depuneți\nPortalul",
+        "url": "https://www.chisinau.md/ro/transparenta"
+      },
+      {
+        "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+        "page": 1,
+        "section": null,
+        "quote": "REGULAMENTUL privind autorizarea construcțiilor în municipiul Chișinău\n\nCapitolul 1. Dispoziții generale\nArt. 1. Prezentul regulament stabilește procedura de eliberare a autorizației de construire pe teritoriul municipiului Chișinău.\nArt. 2. Autorizația de construire se eliberează de Direcția Generală Arhitectură, Urbanism și Relații Funciare (DGAURF).",
+        "url": "https://dgaurf.md/regulament-autorizare-constructii"
+      },
+      {
+        "document": "Dispoziția Primarului nr. 412/2025 privind termenele de eliberare a autorizațiilor",
+        "page": 1,
+        "section": null,
+        "quote": "DISPOZIȚIA PRIMARULUI nr. 412 din 15 martie 2025\nCu privire la optimizarea termenelor de eliberare a autorizațiilor de construire\n\nArt. 1. Se stabilește că termenul de examinare a cererilor pentru autorizația de construire este de 20 zile lucrătoare de la înregistrarea dosarului complet.\nArt. 2. Prevederile prezentei dispoziții se aplică începând cu data publicării.\nArt. 3. Direcția Generală Arhit",
+        "url": "https://www.chisinau.md/ro/acteoficiale/dispozitia-412-2025"
+      },
+      {
+        "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+        "page": 3,
+        "section": null,
+        "quote": "Capitolul 3. Termene\nSecțiunea 3.2. Termenul de examinare\nCererea pentru eliberarea autorizației de construire se examinează în termen de 30 zile lucrătoare de la data înregistrării dosarului complet.\nÎn cazul dosarelor incomplete, termenul începe să curgă de la data completării.",
+        "url": "https://dgaurf.md/regulament-autorizare-constructii"
+      }
+    ]
+  },
+  {
+    "q": "Care este termenul pentru autorizatia de construire?",
+    "status": "supported",
+    "answer": "Termenul pentru autorizarea de construire este de 30 zile lucrătoare de la înregistrarea dosarului complet.",
+    "sources": [
+      {
+        "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+        "page": 3,
+        "section": "Secțiunea 3.2. Termenul de examinare",
+        "quote": "Cererea pentru eliberarea autorizației de construire se examinează în termen de 30 zile lucrătoare de la data înregistrării dosarului complet.",
+        "url": "https://dgaurf.md/regulament-autorizare-constructii"
+      }
+    ],
+    "next_action": {
+      "label": "autorizatie construire / разрешение на строительство",
+      "url": "https://dgaurf.md/",
+      "contact": null
+    },
+    "confidence": "high",
+    "language": "ro",
+    "evidence_preview": [
+      {
+        "document": "Dispoziția Primarului nr. 412/2025 privind termenele de eliberare a autorizațiilor",
+        "page": 1,
+        "section": null,
+        "quote": "DISPOZIȚIA PRIMARULUI nr. 412 din 15 martie 2025\nCu privire la optimizarea termenelor de eliberare a autorizațiilor de construire\n\nArt. 1. Se stabilește că termenul de examinare a cererilor pentru autorizația de construire este de 20 zile lucrătoare de la înregistrarea dosarului complet.\nArt. 2. Prevederile prezentei dispoziții se aplică începând cu data publicării.\nArt. 3. Direcția Generală Arhit",
+        "url": "https://www.chisinau.md/ro/acteoficiale/dispozitia-412-2025"
+      },
+      {
+        "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+        "page": 3,
+        "section": null,
+        "quote": "Capitolul 3. Termene\nSecțiunea 3.2. Termenul de examinare\nCererea pentru eliberarea autorizației de construire se examinează în termen de 30 zile lucrătoare de la data înregistrării dosarului complet.\nÎn cazul dosarelor incomplete, termenul începe să curgă de la data completării.",
+        "url": "https://dgaurf.md/regulament-autorizare-constructii"
+      },
+      {
+        "document": "Ghidul cetățeanului — Certificate și Autorizații",
+        "page": 1,
+        "section": null,
+        "quote": "Ghidul cetățeanului privind certificatele și autorizațiile municipale\n\n1. Autorizația de construire\nPașii pentru obținerea autorizației de construire:\nPasul 1. Obțineți certificatul de urbanism.\nPasul 2. Pregătiți proiectul de execuție.\nPasul 3. Colectați avizele necesare.\nPasul 4. Depuneți dosarul complet la DGAURF sau online.\nPasul 5. Ridicați autorizația după emitere.\n\n2. Unde depuneți\nPortalul",
+        "url": "https://www.chisinau.md/ro/transparenta"
+      },
+      {
+        "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+        "page": 2,
+        "section": null,
+        "quote": "Capitolul 2. Acte necesare\nSecțiunea 2.1. Dosarul solicitantului\nPentru obținerea autorizației de construire, solicitantul depune următoarele acte:\n1. Cerere tip, completată și semnată.\n2. Buletinul de identitate al solicitantului (copie).\n3. Extrasul din Registrul bunurilor imobile.\n4. Certificatul de urbanism.\n5. Proiectul de execuție, semnat de proiectant autorizat.\n6. Avizele prevăzute în cert",
+        "url": "https://dgaurf.md/regulament-autorizare-constructii"
+      },
+      {
+        "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+        "page": 1,
+        "section": null,
+        "quote": "REGULAMENTUL privind autorizarea construcțiilor în municipiul Chișinău\n\nCapitolul 1. Dispoziții generale\nArt. 1. Prezentul regulament stabilește procedura de eliberare a autorizației de construire pe teritoriul municipiului Chișinău.\nArt. 2. Autorizația de construire se eliberează de Direcția Generală Arhitectură, Urbanism și Relații Funciare (DGAURF).",
+        "url": "https://dgaurf.md/regulament-autorizare-constructii"
+      }
+    ]
+  },
+  {
+    "q": "Care este amenda pentru parcare ilegala in Chisinau?",
+    "status": "missing",
+    "answer": "",
+    "sources": [],
+    "next_action": null,
+    "confidence": "low",
+    "language": "ro",
+    "evidence_preview": [
+      {
+        "document": "Informații de contact — Primăria Municipiului Chișinău",
+        "page": 1,
+        "section": null,
+        "quote": "Contacte oficiale Primăria Municipiului Chișinău\n\nAdresa: BD. Ștefan cel Mare și Sfânt 83, MD-2012, Chișinău.\n\nGhișeul Unic:\nTelefon: +373 22 20 15 05 / 20 16 97 / 20 15 13\nEmail: primaria@pmc.md\nProgram: Luni–Vineri 09:00–16:00 (pauză 12:00–13:00)\n\nServiciul de Presă:\nTelefon: +373 22 20 17 08 / 20 17 09\nEmail: drp@pmc.md\n\nLinia națională anticorupție: 080055555",
+        "url": "http://chisinau.md"
+      },
+      {
+        "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+        "page": 1,
+        "section": null,
+        "quote": "REGULAMENTUL privind autorizarea construcțiilor în municipiul Chișinău\n\nCapitolul 1. Dispoziții generale\nArt. 1. Prezentul regulament stabilește procedura de eliberare a autorizației de construire pe teritoriul municipiului Chișinău.\nArt. 2. Autorizația de construire se eliberează de Direcția Generală Arhitectură, Urbanism și Relații Funciare (DGAURF).",
+        "url": "https://dgaurf.md/regulament-autorizare-constructii"
+      },
+      {
+        "document": "Regulamentul privind autorizarea construcțiilor în municipiul Chișinău",
+        "page": 4,
+        "section": null,
+        "quote": "Capitolul 4. Contact\nSolicitanții pot depune dosarul la sediul DGAURF sau prin serviciile electronice ale Primăriei.\nInformații suplimentare: https://dgaurf.md/",
+        "url": "https://dgaurf.md/regulament-autorizare-constructii"
+      },
+      {
+        "document": "Servicii de asistență medicală și socială — help.chisinau.md",
+        "page": 1,
+        "section": null,
+        "quote": "Portalul help.chisinau.md oferă informații despre serviciile de asistență medicală și socială din municipiul Chișinău.\nCetățenii pot consulta lista instituțiilor medicale teritoriale (AMT) pe sectoare: Botanica, Centru, Buiucani, Ciocana, Râșcani.\nPentru programări și detalii, accesați https://help.chisinau.md/",
+        "url": "https://help.chisinau.md/"
+      }
+    ]
+  }
+]

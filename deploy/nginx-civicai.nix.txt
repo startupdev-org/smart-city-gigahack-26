@@ -1,0 +1,50 @@
+# Adaugă în services.nginx.virtualHosts din configuration.nix
+# Înlocuiește CIVICAI_HOST cu IP-ul LAN al PC-ului unde rulează CivicAI
+# (ex: 192.168.0.238). Cloudflare → NixOS:80 → proxy HTTP către PC.
+
+# --- Frontend: https://civicai.visio.md ---
+virtualHosts."civicai.visio.md" = {
+  enableACME = false;
+  forceSSL = false;
+  listen = [{ addr = "0.0.0.0"; port = 80; }];
+  locations."/" = {
+    proxyPass = "http://192.168.0.238:3000";
+    proxyWebsockets = true;
+    extraConfig = ''
+      proxy_set_header Host ''$host;
+      proxy_set_header X-Real-IP ''$remote_addr;
+      proxy_set_header X-Forwarded-For ''$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_read_timeout 3600s;
+      proxy_send_timeout 3600s;
+      client_max_body_size 25M;
+    '';
+  };
+};
+
+# --- API: https://civicai-api.visio.md ---
+virtualHosts."civicai-api.visio.md" = {
+  enableACME = false;
+  forceSSL = false;
+  listen = [{ addr = "0.0.0.0"; port = 80; }];
+  locations."/" = {
+    proxyPass = "http://192.168.0.238:8000";
+    proxyWebsockets = true;
+    extraConfig = ''
+      proxy_set_header Host ''$host;
+      proxy_set_header X-Real-IP ''$remote_addr;
+      proxy_set_header X-Forwarded-For ''$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto https;
+      # SSE / chat stream — fără buffer
+      proxy_buffering off;
+      proxy_cache off;
+      proxy_read_timeout 3600s;
+      proxy_send_timeout 3600s;
+      client_max_body_size 25M;
+    '';
+  };
+};
+
+# Opțional în networking.hosts pe NixOS:
+# "192.168.0.238" = [ "civicai.visio.md" "civicai-api.visio.md" ];
+# (doar pentru test local pe server; Cloudflare DNS e separat)
