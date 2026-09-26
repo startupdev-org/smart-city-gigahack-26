@@ -301,6 +301,7 @@ def extract_html(url: str, body: bytes) -> tuple[str, str, list[tuple[str, str]]
     Returns (title, main-article text, links).
     Sidebars / related posts / chrome are excluded from indexed text,
     but ALL page links are collected before chrome stripping (maximal crawl).
+    Also discovers URLs embedded in linked CSS/JS assets.
     """
     soup = BeautifulSoup(body, "lxml")
 
@@ -331,6 +332,20 @@ def extract_html(url: str, body: bytes) -> tuple[str, str, list[tuple[str, str]]
         rel = " ".join(link.get("rel") or []).lower()
         if "next" in rel or "prev" in rel:
             links.append((normalize_url(urljoin(url, link["href"])), rel))
+
+    # CSS / JS asset discovery (URLs not present as <a href>)
+    try:
+        from backend.crawler.asset_links import (
+            collect_asset_urls_from_html,
+            discover_links_from_assets,
+        )
+
+        assets = collect_asset_urls_from_html(url, soup)
+        if assets:
+            extra = discover_links_from_assets(url, assets)
+            links.extend(extra)
+    except Exception:  # noqa: BLE001
+        pass
 
     _clean_chrome(soup)
 

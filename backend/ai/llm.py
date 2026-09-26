@@ -80,11 +80,11 @@ class LLMService:
             "options": {
                 "temperature": 0.1,
                 "num_ctx": 3072,
-                "num_predict": 640,
+                "num_predict": 1200,
             },
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": _truncate(user, 5500)},
+                {"role": "user", "content": _truncate(user, 14000)},
             ],
         }
 
@@ -98,7 +98,7 @@ class LLMService:
         }
 
     def _groq_payload(
-        self, *, system: str, user: str, stream: bool, max_tokens: int = 1024
+        self, *, system: str, user: str, stream: bool, max_tokens: int = 1600
     ) -> dict[str, Any]:
         return {
             "model": self.groq_model,
@@ -107,7 +107,7 @@ class LLMService:
             "max_tokens": max_tokens,
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": _truncate(user, 12000)},
+                {"role": "user", "content": _truncate(user, 20000)},
             ],
         }
 
@@ -154,7 +154,7 @@ class LLMService:
         )
         try:
             content = self._chat_once(
-                system=STRUCTURED_SYSTEM_PROMPT, user=prompt, max_tokens=900
+                system=STRUCTURED_SYSTEM_PROMPT, user=prompt, max_tokens=1400
             )
             data = _extract_json(content)
         except Exception as exc:  # noqa: BLE001
@@ -242,7 +242,7 @@ class LLMService:
 
     def _stream_groq(self, system: str, user: str) -> Iterator[str]:
         payload = self._groq_payload(
-            system=system, user=user, stream=True, max_tokens=1024
+            system=system, user=user, stream=True, max_tokens=1600
         )
         with httpx.Client(timeout=180.0) as client:
             with client.stream(
@@ -279,7 +279,7 @@ class LLMService:
                 yield from self._iter_ollama_tokens(resp)
 
     def _nonstream_tokens(self, prompt: str) -> Iterator[str]:
-        content = self._chat_once(system=SYSTEM_PROMPT, user=prompt, max_tokens=1024)
+        content = self._chat_once(system=SYSTEM_PROMPT, user=prompt, max_tokens=1600)
         if content:
             yield content
 

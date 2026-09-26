@@ -109,8 +109,20 @@ def require_user(user: Annotated[Optional[User], Depends(get_current_user)]) -> 
     return user
 
 
+STAFF_ROLES = frozenset({"admin", "manager"})
+ADMIN_ROLES = frozenset({"admin"})
+
+
+def is_staff(user: User) -> bool:
+    return (user.role or "") in STAFF_ROLES
+
+
+def is_admin(user: User) -> bool:
+    return (user.role or "") in ADMIN_ROLES
+
+
 def require_approved(user: Annotated[User, Depends(require_user)]) -> User:
-    if user.role == "admin" or bool(getattr(user, "approved", False)):
+    if is_staff(user) or bool(getattr(user, "approved", False)):
         return user
     raise HTTPException(
         status_code=403,
@@ -119,8 +131,15 @@ def require_approved(user: Annotated[User, Depends(require_user)]) -> User:
 
 
 def require_admin(user: Annotated[User, Depends(require_user)]) -> User:
-    if user.role != "admin":
+    if not is_admin(user):
         raise HTTPException(status_code=403, detail="Admin only")
+    return user
+
+
+def require_staff(user: Annotated[User, Depends(require_user)]) -> User:
+    """Admin or manager — operations panel."""
+    if not is_staff(user):
+        raise HTTPException(status_code=403, detail="Staff only (admin/manager)")
     return user
 
 
@@ -147,7 +166,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)) -> TokenOut:
         access_token=_make_access(user),
         role=user.role,
         email=user.email,
-        approved=bool(user.approved) or user.role == "admin",
+        approved=bool(user.approved) or is_staff(user),
     )
 
 
@@ -160,7 +179,7 @@ def login(body: LoginIn, db: Session = Depends(get_db)) -> TokenOut:
         access_token=_make_access(user),
         role=user.role,
         email=user.email,
-        approved=bool(user.approved) or user.role == "admin",
+        approved=bool(user.approved) or is_staff(user),
     )
 
 
@@ -171,7 +190,25 @@ def me(user: Annotated[User, Depends(require_user)]) -> dict:
         "email": user.email,
         "role": user.role,
         "language_pref": user.language_pref,
-        "approved": bool(user.approved) or user.role == "admin",
+        "approved": bool(user.approved) or is_staff(user),
+        "permissions": _permissions_for(user.role),
+    }
+
+
+def _permissions_for(role: str) -> dict[str, bool]:
+    r = role or "citizen"
+    return {
+        "admin_panel": r in STAFF_ROLES,
+        "users": r == "admin",
+        "llm": r == "admin",
+        "cost": r == "admin",
+        "health": r == "admin",
+        "demo": r == "admin",
+        "feedback": r in STAFF_ROLES,
+        "stats": r in STAFF_ROLES,
+        "documents": r in STAFF_ROLES,
+        "sources": r in STAFF_ROLES,
+        "ingest": r in STAFF_ROLES,
     }
 
 

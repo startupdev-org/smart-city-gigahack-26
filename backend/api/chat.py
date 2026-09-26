@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 class ChatRequest(BaseModel):
     question: str = Field(..., min_length=2)
-    top_k: int = Field(5, ge=1, le=20)
+    top_k: int = Field(12, ge=1, le=30)
     session_id: int | None = None
     ui_language: str | None = Field(
         default=None,
@@ -123,7 +123,7 @@ def _evidence_blocks(chunks: list[RetrievedChunk]) -> list[str]:
             f"[{i}] document={c.document_title}\n"
             f"page={c.page} section={c.section}\n"
             f"url={c.document_url}\n"
-            f"text={text[:1200]}"
+            f"text={text[:2200]}"
         )
     return blocks
 
@@ -235,7 +235,7 @@ def _ground_sources(
             return out[:4]
         if out:
             return out[:4]
-    return unique([_chunk_to_source(h) for h in ranked[:5]])[:3]
+    return unique([_chunk_to_source(h) for h in ranked[:10]])[:8]
 
 
 def _pick_next_action(
@@ -334,9 +334,17 @@ def _build_response(*, body: ChatRequest, db: Session) -> ChatResponse:
             language=lang,
         )
 
+    from backend.ai.analyze import analyze_question_meta
+
+    meta = analyze_question_meta(body.question, ui_language=body.ui_language)
     retriever = HybridRetriever(db)
     hits = retriever.search(body.question, top_k=body.top_k)
-    gate, usable = verify_evidence(hits, question=body.question)
+    gate, usable = verify_evidence(
+        hits,
+        question=body.question,
+        answer_mode=meta.get("answer_mode") or "fact",
+        wants_list=bool(meta.get("wants_list")),
+    )
     preview = [_chunk_to_source(h) for h in usable] if gate != "missing" else []
     evidence_urls = [h.document_url for h in usable if h.document_url]
 

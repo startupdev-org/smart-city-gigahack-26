@@ -210,7 +210,7 @@ export function ChatApp() {
   async function ask(q: string) {
     const question = q.trim();
     if (!question || busy || !user) return;
-    if (!user.approved && user.role !== "admin") return;
+    if (!user.approved && user.role !== "admin" && user.role !== "manager") return;
 
     setBusy(true);
     setMessages((m) => [
@@ -361,7 +361,9 @@ export function ChatApp() {
   );
   const suggestions =
     lang === "ru" ? SUGGESTIONS_RU : lang === "en" ? SUGGESTIONS_EN : SUGGESTIONS_RO;
-  const canChat = Boolean(user && (user.approved || user.role === "admin"));
+  const canChat = Boolean(
+    user && (user.approved || user.role === "admin" || user.role === "manager")
+  );
 
   if (!ready || !user) {
     return <div className="boot-screen">CivicAI</div>;
@@ -411,15 +413,17 @@ export function ChatApp() {
         </div>
         <div className="side-foot">
           <div className="user-line">{user.email}</div>
-          {!user.approved && user.role !== "admin" && (
+          {!user.approved && user.role !== "admin" && user.role !== "manager" && (
             <div className="pending-banner">
               Contul așteaptă confirmarea unui administrator.
             </div>
           )}
           <div className="side-actions">
-            {user.role === "admin" && (
-              <Link href="/admin">Administrare · LLM</Link>
-            )}
+            {user.role === "admin" || user.role === "manager" ? (
+              <Link href="/admin">
+                {user.role === "admin" ? "Administrare" : "Panou manager"}
+              </Link>
+            ) : null}
             <button type="button" onClick={onLogout}>
               Ieșire
             </button>

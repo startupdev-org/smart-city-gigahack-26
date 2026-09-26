@@ -3,6 +3,13 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
+from backend.ai.analyze import (
+    fold,
+    is_job_question,
+    overlap_score,
+    wants_current as analyze_wants_current,
+    wants_list as analyze_wants_list,
+)
 from backend.ai.retrieval import RetrievedChunk
 
 _DAY_RE = re.compile(
@@ -57,42 +64,14 @@ def _deadline_mentions(text: str) -> set[int]:
 
 
 def _token_overlap(question: str, text: str) -> float:
-    def toks(s: str) -> set[str]:
-        return {
-            w
-            for w in re.findall(r"[a-zăâîșțёа-я0-9]{3,}", (s or "").lower())
-            if w
-            not in {
-                "pentru",
-                "despre",
-                "care",
-                "este",
-                "sunt",
-                "din",
-                "the",
-                "and",
-                "для",
-                "что",
-                "ale",
-                "sau",
-                "cum",
-                "mai",
-                "cadrul",
-                "secția",
-                "sectia",
-            }
-        }
-
-    q, t = toks(question), toks(text)
-    if not q or not t:
-        return 0.0
-    return len(q & t) / max(1, len(q))
+    """Backward-compatible wrapper — diacritic-tolerant."""
+    return overlap_score(question, text)
 
 
 _YEAR_RE = re.compile(r"(?:/|[^0-9])(20\d{2})(?:/|[^0-9])")
 _CURRENTISH_Q = re.compile(
     r"\b(acum|current|now|deschis|открыт|vacant[ăaе]?|конкурс|funcți[ei].*vacant|"
-    r"angajar|job|astăzi|astazi|2026)\b",
+    r"angajar|job|astăzi|astazi|2026|aplic|aplica)\b",
     re.IGNORECASE,
 )
 
@@ -105,15 +84,30 @@ def _chunk_year(c: RetrievedChunk) -> int | None:
     return max(years)
 
 
+def _diversify_by_document(
+    scored: list[tuple[float, RetrievedChunk]], *, limit: int = 8
+) -> list[RetrievedChunk]:
+    """Keep best chunk per document so listing answers see many announcements."""
+    by_doc: dict[int, tuple[float, RetrievedChunk]] = {}
+    for score, c in scored:
+        prev = by_doc.get(c.document_id)
+        if prev is None or score > prev[0]:
+            by_doc[c.document_id] = (score, c)
+    ranked = sorted(by_doc.values(), key=lambda x: x[0], reverse=True)
+    return [c for _, c in ranked[:limit]]
+
+
 def verify_evidence(
     chunks: list[RetrievedChunk],
     *,
     question: str = "",
     min_rerank: float = 0.22,
     min_dense: float = 0.48,
-    min_overlap: float = 0.22,
+    min_overlap: float = 0.18,
+    answer_mode: str = "fact",
+    wants_list: bool | None = None,
 ) -> tuple[str, list[RetrievedChunk]]:
-    """Strict gate — prefer missing over irrelevant citations."""
+    """Gate evidence — prefer multi-doc coverage for list/current questions."""
     if is_offtopic_question(question):
         return "missing", []
 
@@ -129,54 +123,115 @@ def verify_evidence(
     except Exception:  # noqa: BLE001
         year_now = datetime.now().year
 
-    wants_current = bool(_CURRENTISH_Q.search(question or ""))
+    wants_current = bool(_CURRENTISH_Q.search(question or "")) or analyze_wants_current(
+        question
+    )
+    list_mode = (
+        wants_list
+        if wants_list is not None
+        else (analyze_wants_list(question) or answer_mode == "list")
+    )
+    job_q = is_job_question(question)
 
     scored: list[tuple[float, RetrievedChunk]] = []
     for c in chunks:
-        # Skip download-manager chrome / placeholder junk
         body = (c.content or "").lower()
+        body_f = fold(c.content or "")
+        title_f = fold(c.document_title or "")
         if "[expire_date]" in body or "download is available until" in body:
             if len((c.content or "").strip()) < 400:
                 continue
-        # Skip heavily chrome-polluted chunks (menu dumps without article body)
-        chrome_hits = sum(
-            1
-            for k in (
-                "dispozițiile pretorului",
-                "dispozitiile pretorului",
-                "căutați pe internet",
-                "cautati pe internet",
-                "declarația de răspundere managerială",
-                "declaratia de raspundere manageriala",
-                "funcții vacante",
-                "functii vacante",
-            )
-            if k in body
-        )
+
+        # Chrome menus are noise ONLY when the user is not asking about that topic
+        chrome_keys = [
+            "dispozitiile pretorului",
+            "cautati pe internet",
+            "declaratia de raspundere manageriala",
+        ]
+        if not job_q:
+            chrome_keys.append("functii vacante")
+        chrome_hits = sum(1 for k in chrome_keys if fold(k) in body_f)
+
         title_body = f"{c.document_title or ''} {c.content or ''}"
         ov = _token_overlap(question, title_body)
         title_ov = _token_overlap(question, c.document_title or "")
-        # If chrome dominates and title doesn't match the question, drop
-        if chrome_hits >= 2 and title_ov < 0.25 and ov < 0.35:
+        if chrome_hits >= 2 and title_ov < 0.25 and ov < 0.30:
+            continue
+
+        # Holiday vacation pages must not answer job-vacancy questions
+        if job_q or re.search(r"concurs|func[tț]|vacant|aplic", question or "", re.I):
+            if re.search(
+                r"vacan[țt]e?[ai]?\s+de\s+var|gr[ăa]dini[țt]|copiilor\s+[îi]n\s+vacan|"
+                r"organizarea\s+activit",
+                title_body,
+                re.I,
+            ) and not re.search(
+                r"func[tț](?:iei|ia|ii)\s+public|ocuparea\s+func|anun[țt].{0,40}concurs",
+                title_body,
+                re.I,
+            ):
+                continue
+
+        past_event = bool(
+            re.search(
+                r"s-a\s+desf[ăa][sș]urat|a\s+fost\s+desf|"
+                r"rezultatele\s+finale\s+vor\s+fi\s+anun|"
+                r"desemnarea\s+[îi]nving|[îi]nving[aă]tori?(?:ului)?|"
+                r"a\s+avut\s+loc\s+etapa",
+                title_body,
+                re.I,
+            )
+        )
+        open_call = bool(
+            re.search(
+                r"anun[țtăa].{0,40}concurs|depune(?:rea)?\s+dosar|"
+                r"până\s+(?:în|la)\s+data|se\s+prelung|aviz\s+concurs|"
+                r"func[tț](?:iei|ia|ii)\s+public|posturi\s+vacante|"
+                r"ocuparea\s+(?:unei\s+)?func|specialist",
+                title_body,
+                re.I,
+            )
+        )
+        if wants_current and past_event and not open_call:
+            continue
+        # Winner / finished notices must never answer "open jobs now"
+        if wants_current and past_event and job_q:
             continue
 
         rr = float(c.rerank_score or 0.0)
         ds = float(c.dense_score or 0.0)
-        if rr >= min_rerank or (ds >= min_dense and ov >= 0.1) or ov >= min_overlap or title_ov >= 0.35:
-            score = max(rr, ds * 0.55, ov) + title_ov * 0.55
-            # boost strong title matches (project / event names)
+        # Lexical title hits from SQL often carry high lexical_score
+        lx = float(getattr(c, "lexical_score", 0) or 0.0)
+        if (
+            rr >= min_rerank
+            or (ds >= min_dense and ov >= 0.08)
+            or ov >= min_overlap
+            or title_ov >= 0.28
+            or lx >= 0.75
+            or (job_q and open_call and (rr >= 0.15 or lx >= 0.5 or ds >= 0.4))
+        ):
+            score = max(rr, ds * 0.55, ov, lx * 0.5) + title_ov * 0.55
             if title_ov >= 0.4:
                 score += 0.3
+            if job_q:
+                if re.search(r"anun[țt]|concurs|vacant|aviz", title_f):
+                    score += 0.4
+                if re.search(r"func[tț]|funct|specialist|dosar", title_f):
+                    score += 0.2
+                if open_call:
+                    score += 0.15
             if chrome_hits >= 2:
-                score -= 0.2
+                score -= 0.25
+            if past_event and not open_call:
+                score -= 0.4
             y = _chunk_year(c)
             if wants_current and y is not None:
                 if y >= year_now:
-                    score += 0.25
+                    score += 0.35
                 elif y >= year_now - 1:
-                    score += 0.05
+                    score += 0.02
                 else:
-                    score -= 0.35
+                    score -= 0.45
             scored.append((score, c))
 
     if not scored:
@@ -184,27 +239,43 @@ def verify_evidence(
 
     scored.sort(key=lambda x: x[0], reverse=True)
     best = scored[0][0]
-    if best < 0.20:
+    if best < 0.18:
         return "missing", []
 
-    # Prefer tightly topical set: keep high title-overlap peers when available
-    topical = [c for s, c in scored if _token_overlap(question, c.document_title or "") >= 0.3]
-    if topical:
-        usable = topical[:4]
+    # LIST / multi-item questions: never collapse to title-overlap-only peers
+    if list_mode or answer_mode in ("list", "howto"):
+        usable = _diversify_by_document(scored, limit=8)
     else:
-        usable = [c for s, c in scored if s >= max(best * 0.55, 0.18)][:4]
+        topical = [
+            c
+            for s, c in scored
+            if _token_overlap(question, c.document_title or "") >= 0.28
+        ]
+        if topical and not wants_current:
+            usable = topical[:6]
+        else:
+            # Score band — keep peers close to best so secondary docs survive
+            usable = _diversify_by_document(
+                [(s, c) for s, c in scored if s >= max(best * 0.45, 0.16)],
+                limit=8,
+            )
     if not usable:
         return "missing", []
 
-    # Current vacancy/event questions: drop clearly outdated peers when a fresh hit exists
+    # Current questions: prefer this year; never present ancient-only as "now"
     if wants_current:
         fresh = [c for c in usable if (_chunk_year(c) or 0) >= year_now]
         if fresh:
-            usable = fresh
+            if list_mode:
+                usable = fresh[:8]
+            else:
+                rest = [c for c in usable if c not in fresh]
+                usable = (fresh + rest)[:8]
         else:
-            # only old docs — better missing than presenting 2024 as "now"
-            old_only = all((_chunk_year(c) or 0) < year_now - 0 for c in usable)
-            if old_only and all((_chunk_year(c) or year_now) <= year_now - 2 for c in usable):
+            recent = [c for c in usable if (_chunk_year(c) or 0) >= year_now - 1]
+            if recent:
+                usable = recent[:8]
+            else:
                 return "missing", []
 
     if question_about_deadline(question):

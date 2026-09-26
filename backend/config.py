@@ -30,10 +30,11 @@ class Settings(BaseSettings):
     api_port: int = 8000
     chunk_size_tokens: int = 650
     chunk_overlap_tokens: int = 100
-    retrieve_dense_k: int = 6
-    retrieve_lexical_k: int = 6
-    rerank_candidates: int = 6
-    rerank_top_k: int = 4
+    # Maximal retrieval for thorough municipal answers
+    retrieve_dense_k: int = 18
+    retrieve_lexical_k: int = 18
+    rerank_candidates: int = 24
+    rerank_top_k: int = 12
     # Crawler — absolute maximal annex / source coverage
     crawl_max_pages: int = 100_000
     crawl_max_depth: int = 25

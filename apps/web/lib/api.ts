@@ -220,7 +220,7 @@ export async function apiChatStream(
     },
     body: JSON.stringify({
       question,
-      top_k: 5,
+      top_k: 12,
       session_id: opts?.sessionId || null,
       ui_language: opts?.uiLanguage || null,
     }),
@@ -405,4 +405,124 @@ export async function apiAdminDeleteDocument(token: string, id: number) {
     method: "DELETE",
     headers: authHeaders(token),
   });
+}
+
+export type StaffPermissions = {
+  admin_panel: boolean;
+  users: boolean;
+  llm: boolean;
+  cost: boolean;
+  health: boolean;
+  demo: boolean;
+  feedback: boolean;
+  stats: boolean;
+  documents: boolean;
+  sources: boolean;
+  ingest: boolean;
+};
+
+export function permissionsForRole(role: string): StaffPermissions {
+  const staff = role === "admin" || role === "manager";
+  const admin = role === "admin";
+  return {
+    admin_panel: staff,
+    users: admin,
+    llm: admin,
+    cost: admin,
+    health: admin,
+    demo: admin,
+    feedback: staff,
+    stats: staff,
+    documents: staff,
+    sources: staff,
+    ingest: staff,
+  };
+}
+
+export async function apiAdminSources(token: string) {
+  const res = await fetch(url("/api/admin/sources"), {
+    headers: authHeaders(token),
+  });
+  if (!res.ok) throw new Error("sources failed");
+  return res.json();
+}
+
+export async function apiAdminCreateSource(
+  token: string,
+  body: {
+    name: string;
+    url: string;
+    type?: string;
+    category?: string;
+    priority?: string;
+    active?: boolean;
+  }
+) {
+  const res = await fetch(url("/api/admin/sources"), {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      typeof data?.detail === "string" ? data.detail : "Nu am putut crea sursa"
+    );
+  }
+  return data;
+}
+
+export async function apiAdminIngestUrl(
+  token: string,
+  body: { url: string; title?: string; source_name?: string; category?: string }
+) {
+  const res = await fetch(url("/api/admin/ingest/url"), {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      typeof data?.detail === "string" ? data.detail : "Ingest URL eșuat"
+    );
+  }
+  return data;
+}
+
+export async function apiAdminIngestText(
+  token: string,
+  body: {
+    title: string;
+    text: string;
+    url?: string;
+    source_name?: string;
+    category?: string;
+  }
+) {
+  const res = await fetch(url("/api/admin/ingest/text"), {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      typeof data?.detail === "string" ? data.detail : "Ingest text eșuat"
+    );
+  }
+  return data;
+}
+
+export async function apiAdminCostProject(
+  token: string,
+  body: Record<string, unknown>
+) {
+  const res = await fetch(url("/api/admin/cost/project"), {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Cost project failed");
+  return res.json();
 }
