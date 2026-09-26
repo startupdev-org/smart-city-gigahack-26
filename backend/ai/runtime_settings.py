@@ -108,4 +108,25 @@ def set_llm_runtime(
         llm_mod.reset_llm_service()
     except Exception:  # noqa: BLE001
         pass
-    return get_llm_runtime()
+
+    out = get_llm_runtime()
+    provider = out.get("provider") or "local"
+    model = (
+        out.get("local_model") if provider == "local" else out.get("groq_model")
+    ) or "?"
+    try:
+        from backend.ai.mode_banner import print_llm_mode_banner, warm_local_stack_async
+
+        print_llm_mode_banner(
+            provider=provider,
+            model=str(model),
+            extra="switched at runtime",
+        )
+        if provider == "local":
+            logger.info("Switched to Local — loading Ollama + RAG models…")
+            warm_local_stack_async(include_rag=True, include_ollama=True)
+        else:
+            logger.info("Switched to API — local eager load skipped")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Mode banner / warm after switch failed: %s", exc)
+    return out

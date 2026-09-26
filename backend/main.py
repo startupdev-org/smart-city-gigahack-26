@@ -60,49 +60,43 @@ def _ensure_vector_index() -> None:
         logger.warning("HNSW index skipped: %s", exc)
 
 
-def _warm_models() -> None:
-    try:
-        from backend.ai.embeddings import get_embedding_service
-        from backend.ai.reranker import get_reranker_service
-
-        logger.info("Warming embedding + reranker models…")
-        get_embedding_service().warm()
-        get_reranker_service().warm()
-        logger.info("Models warm")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Model warm failed: %s", exc)
-
-
-def _migrate_schema() -> None:
-    try:
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS approved BOOLEAN DEFAULT FALSE"
-                )
-            )
-            conn.execute(
-                text("UPDATE users SET approved = TRUE WHERE role = 'admin'")
-            )
-            conn.execute(
-                text("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS answer TEXT")
-            )
-            conn.execute(
-                text("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS detail TEXT")
-            )
-        logger.info("Schema migrate ok")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Schema migrate: %s", exc)
-
-
 @app.on_event("startup")
 def on_startup() -> None:
+    from backend.ai.mode_banner import print_llm_mode_banner
+    from backend.ai.runtime_settings import get_llm_runtime
+
     Base.metadata.create_all(bind=engine)
     _migrate_schema()
     with SessionLocal() as db:
         seed_admin(db)
     _ensure_vector_index()
+
+    rt = get_llm_runtime()
+    provider = rt.get("provider") or "local"
+    model = (
+        rt.get("local_model") if provider == "local" else rt.get("groq_model")
+    ) or "?"
+    print_llm_mode_banner(provider=provider, model=str(model))
     threading.Thread(target=_warm_models, daemon=True).start()
+
+
+def _warm_models() -> None:
+    """Eager-load local stack only when LLM provider is local."""
+    from backend.ai.mode_banner import warm_local_stack
+    from backend.ai.runtime_settings import get_llm_runtime
+
+    rt = get_llm_runtime()
+    provider = rt.get("provider") or "local"
+
+    if provider == "local":
+        logger.info("Local LLM mode — warming Ollama + RAG models…")
+        warm_local_stack(include_rag=True, include_ollama=True)
+    else:
+        logger.info(
+            "API LLM mode — skipping local model load "
+            "(embeddings/reranker load lazily on first search; "
+            "Ollama loads only when you switch to Local in Admin)"
+        )
 
 
 @app.get("/")
