@@ -5,7 +5,7 @@ from pathlib import Path
 import httpx
 
 sys.stdout.reconfigure(encoding="utf-8")
-base = "http://127.0.0.1:8000"
+base = os.getenv("NEXT_PUBLIC_API_URL")
 out = {"root": httpx.get(f"{base}/").json()}
 
 # auth
