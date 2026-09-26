@@ -1,0 +1,346 @@
+[1mdiff --git a/.env.example b/.env.example[m
+[1mindex 64cc89f..74ba501 100644[m
+[1m--- a/.env.example[m
+[1m+++ b/.env.example[m
+[36m@@ -22,9 +22,9 @@[m [mJWT_SECRET=change-me-in-production[m
+ # Optional[m
+ OPENAI_API_KEY=[m
+ [m
+[31m-# Frontend → API (browser). Loaded from repo-root .env only.[m
+[31m-NEXT_PUBLIC_API_URL=https://civicai-api.visio.md[m
+[31m-# NEXT_PUBLIC_API_URL=http://127.0.0.1:8000[m
+[32m+[m[32m# Frontend → API (browser). Production example:[m
+[32m+[m[32m# NEXT_PUBLIC_API_URL=https://civicai-api.visio.md[m
+[32m+[m[32mNEXT_PUBLIC_API_URL=http://127.0.0.1:8000[m
+ [m
+ # API bind[m
+ API_HOST=0.0.0.0[m
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mindex 9ea85f6..5d45394 100644[m
+[1m--- a/.gitignore[m
+[1m+++ b/.gitignore[m
+[36m@@ -2,8 +2,6 @@[m
+ .env[m
+ .env.*[m
+ !.env.example[m
+[31m-# Do not use per-app env files — load repo-root .env only[m
+[31m-apps/web/.env[m
+ apps/web/.env.local[m
+ apps/web/.env*.local[m
+ [m
+[1mdiff --git a/apps/web/app/admin/page.tsx b/apps/web/app/admin/page.tsx[m
+[1mindex 26a0459..5d8879f 100644[m
+[1m--- a/apps/web/app/admin/page.tsx[m
+[1m+++ b/apps/web/app/admin/page.tsx[m
+[36m@@ -195,7 +195,7 @@[m [mexport default function AdminPage() {[m
+     jobs.push([m
+       settled([m
+         fetch([m
+[31m-          `${(process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "")}/api/tools`[m
+[32m+[m[32m          `${process.env.NEXT_PUBLIC_API_URL?.trim() || "http://127.0.0.1:8000"}/api/tools`[m
+         ).then((r) => {[m
+           if (!r.ok) throw new Error("tools");[m
+           return r.json();[m
+[1mdiff --git a/apps/web/lib/api.ts b/apps/web/lib/api.ts[m
+[1mindex 43ff8e6..63dd00e 100644[m
+[1m--- a/apps/web/lib/api.ts[m
+[1m+++ b/apps/web/lib/api.ts[m
+[36m@@ -1,5 +1,6 @@[m
+[31m-/** API base from repo-root .env (NEXT_PUBLIC_API_URL). No localhost fallback. */[m
+[31m-export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");[m
+[32m+[m[32mexport const API_URL = process.env.NEXT_PUBLIC_API_URL?.trim() || "";[m
+[32m+[m[32mconst STREAM_URL =[m
+[32m+[m[32m  process.env.NEXT_PUBLIC_API_URL?.trim() || "http://127.0.0.1:8000";[m
+ [m
+ function url(path: string) {[m
+   return `${API_URL}${path}`;[m
+[36m@@ -211,7 +212,7 @@[m [mexport async function apiChatStream([m
+   },[m
+   opts?: { token?: string; sessionId?: number | null; uiLanguage?: string }[m
+ ): Promise<ChatResponse> {[m
+[31m-  const res = await fetch(`${API_URL}/api/chat/stream`, {[m
+[32m+[m[32m  const res = await fetch(`${STREAM_URL}/api/chat/stream`, {[m
+     method: "POST",[m
+     headers: {[m
+       ...authHeaders(opts?.token),[m
+[1mdiff --git a/apps/web/next.config.js b/apps/web/next.config.js[m
+[1mindex 01eb26d..e29a60c 100644[m
+[1m--- a/apps/web/next.config.js[m
+[1m+++ b/apps/web/next.config.js[m
+[36m@@ -1,60 +1,15 @@[m
+ /** @type {import('next').NextConfig} */[m
+ const path = require("path");[m
+[31m-const fs = require("fs");[m
+[31m-[m
+[31m-// Force-read repo-root .env (ignore apps/web/.env.local entirely)[m
+[31m-const repoRoot = path.join(__dirname, "../..");[m
+[31m-const envPath = path.join(repoRoot, ".env");[m
+[31m-[m
+[31m-function readRootEnv(filePath) {[m
+[31m-  const out = {};[m
+[31m-  if (!fs.existsSync(filePath)) return out;[m
+[31m-  const text = fs.readFileSync(filePath, "utf8");[m
+[31m-  for (const raw of text.split(/\r?\n/)) {[m
+[31m-    const line = raw.trim();[m
+[31m-    if (!line || line.startsWith("#")) continue;[m
+[31m-    const eq = line.indexOf("=");[m
+[31m-    if (eq <= 0) continue;[m
+[31m-    const key = line.slice(0, eq).trim();[m
+[31m-    let val = line.slice(eq + 1).trim();[m
+[31m-    if ([m
+[31m-      (val.startsWith('"') && val.endsWith('"')) ||[m
+[31m-      (val.startsWith("'") && val.endsWith("'"))[m
+[31m-    ) {[m
+[31m-      val = val.slice(1, -1);[m
+[31m-    }[m
+[31m-    out[key] = val;[m
+[31m-  }[m
+[31m-  return out;[m
+[31m-}[m
+[31m-[m
+[31m-const rootEnv = readRootEnv(envPath);[m
+[31m-for (const [k, v] of Object.entries(rootEnv)) {[m
+[31m-  process.env[k] = v;[m
+[31m-}[m
+[31m-[m
+[31m-const apiUrl = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");[m
+[31m-if (!apiUrl) {[m
+[31m-  console.warn([m
+[31m-    "[civic-ai] NEXT_PUBLIC_API_URL missing in repo-root .env — API calls will be same-origin /api"[m
+[31m-  );[m
+[31m-} else {[m
+[31m-  console.info(`[civic-ai] API base from root .env → ${apiUrl}`);[m
+[31m-}[m
+ [m
+ const nextConfig = {[m
+   reactStrictMode: true,[m
+   outputFileTracingRoot: path.join(__dirname),[m
+[31m-  allowedDevOrigins: ["127.0.0.1", "localhost", "civicai.visio.md"],[m
+[31m-  env: {[m
+[31m-    NEXT_PUBLIC_API_URL: apiUrl,[m
+[31m-  },[m
+[32m+[m[32m  allowedDevOrigins: ["127.0.0.1", "localhost"],[m
+   async rewrites() {[m
+[31m-    if (!apiUrl) return [];[m
+     return [[m
+       {[m
+         source: "/api/:path*",[m
+[31m-        destination: `${apiUrl}/api/:path*`,[m
+[32m+[m[32m        destination: process.env.NEXT_PUBLIC_API_URL + "/api/:path*",[m
+       },[m
+     ];[m
+   },[m
+[1mdiff --git a/scripts/benchmark_ai.py b/scripts/benchmark_ai.py[m
+[1mnew file mode 100644[m
+[1mindex 0000000..a00ad6f[m
+[1m--- /dev/null[m
+[1m+++ b/scripts/benchmark_ai.py[m
+[36m@@ -0,0 +1,208 @@[m
+[32m+[m[32m"""Measure the real CivicAI streaming path without saving credentials.[m
+[32m+[m
+[32m+[m[32mExamples:[m
+[32m+[m[32m  CIVICAI_EMAIL=you@example.com CIVICAI_PASSWORD=... python3 scripts/benchmark_ai.py[m
+[32m+[m[32m  CIVICAI_TOKEN=... python3 scripts/benchmark_ai.py --repeat 3 --output /tmp/civicai-benchmark.json[m
+[32m+[m[32m"""[m
+[32m+[m
+[32m+[m[32mfrom __future__ import annotations[m
+[32m+[m
+[32m+[m[32mimport argparse[m
+[32m+[m[32mimport json[m
+[32m+[m[32mimport os[m
+[32m+[m[32mimport re[m
+[32m+[m[32mimport statistics[m
+[32m+[m[32mimport sys[m
+[32m+[m[32mimport time[m
+[32m+[m[32mfrom pathlib import Path[m
+[32m+[m[32mfrom urllib.error import HTTPError, URLError[m
+[32m+[m[32mfrom urllib.request import Request, urlopen[m
+[32m+[m
+[32m+[m
+[32m+[m[32mCASES = {[m
+[32m+[m[32m    "documents_ro": ("Ce acte îmi trebuie pentru autorizația de construire?", "ro"),[m
+[32m+[m[32m    "documents_ru": ("Какие документы нужны для разрешения на строительство?", "ru"),[m
+[32m+[m[32m    "deadline": ("Există contradicții privind termenul autorizației de construire?", "ro"),[m
+[32m+[m[32m    "current_jobs": ("Există concursuri pentru funcții publice vacante acum?", "ro"),[m
+[32m+[m[32m    "contact": ("Care este contactul DGAURF?", "ro"),[m
+[32m+[m[32m    "missing": ("Informație despre vacanța inventată XYZ123 care nu există", "ro"),[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef request_json(base: str, path: str, payload: dict | None = None) -> dict:[m
+[32m+[m[32m    body = json.dumps(payload).encode("utf-8") if payload is not None else None[m
+[32m+[m[32m    req = Request([m
+[32m+[m[32m        base + path,[m
+[32m+[m[32m        data=body,[m
+[32m+[m[32m        headers={"Content-Type": "application/json"} if body else {},[m
+[32m+[m[32m        method="POST" if body else "GET",[m
+[32m+[m[32m    )[m
+[32m+[m[32m    with urlopen(req, timeout=10) as response:[m
+[32m+[m[32m        return json.load(response)[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef access_token(base: str) -> str:[m
+[32m+[m[32m    token = os.environ.get("CIVICAI_TOKEN", "").strip()[m
+[32m+[m[32m    if token:[m
+[32m+[m[32m        return token[m
+[32m+[m[32m    email = os.environ.get("CIVICAI_EMAIL", "").strip()[m
+[32m+[m[32m    password = os.environ.get("CIVICAI_PASSWORD", "")[m
+[32m+[m[32m    if not email or not password:[m
+[32m+[m[32m        raise ValueError("Set CIVICAI_TOKEN or CIVICAI_EMAIL and CIVICAI_PASSWORD")[m
+[32m+[m[32m    return request_json([m
+[32m+[m[32m        base, "/api/auth/login", {"email": email, "password": password}[m
+[32m+[m[32m    )["access_token"][m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef run_case(base: str, token: str, name: str, timeout: float) -> dict:[m
+[32m+[m[32m    question, language = CASES[name][m
+[32m+[m[32m    body = json.dumps([m
+[32m+[m[32m        {"question": question, "top_k": 12, "ui_language": language}[m
+[32m+[m[32m    ).encode("utf-8")[m
+[32m+[m[32m    req = Request([m
+[32m+[m[32m        base + "/api/chat/stream",[m
+[32m+[m[32m        data=body,[m
+[32m+[m[32m        headers={[m
+[32m+[m[32m            "Authorization": f"Bearer {token}",[m
+[32m+[m[32m            "Content-Type": "application/json",[m
+[32m+[m[32m            "Accept": "text/event-stream",[m
+[32m+[m[32m        },[m
+[32m+[m[32m        method="POST",[m
+[32m+[m[32m    )[m
+[32m+[m[32m    started = time.perf_counter()[m
+[32m+[m[32m    first_token_ms = None[m
+[32m+[m[32m    tools = [][m
+[32m+[m[32m    result = None[m
+[32m+[m[32m    event_name = "message"[m
+[32m+[m[32m    data_lines = [][m
+[32m+[m
+[32m+[m[32m    def consume_event() -> None:[m
+[32m+[m[32m        nonlocal first_token_ms, result[m
+[32m+[m[32m        if not data_lines:[m
+[32m+[m[32m            return[m
+[32m+[m[32m        try:[m
+[32m+[m[32m            data = json.loads("\n".join(data_lines))[m
+[32m+[m[32m        except json.JSONDecodeError:[m
+[32m+[m[32m            return[m
+[32m+[m[32m        if event_name == "token" and first_token_ms is None:[m
+[32m+[m[32m            first_token_ms = round((time.perf_counter() - started) * 1000)[m
+[32m+[m[32m        elif event_name == "tool" and data.get("status") in ("done", "error"):[m
+[32m+[m[32m            tools.append([m
+[32m+[m[32m                {[m
+[32m+[m[32m                    "name": data.get("name"),[m
+[32m+[m[32m                    "status": data.get("status"),[m
+[32m+[m[32m                    "ms": data.get("ms"),[m
+[32m+[m[32m                    "detail": data.get("detail"),[m
+[32m+[m[32m                }[m
+[32m+[m[32m            )[m
+[32m+[m[32m        elif event_name == "result":[m
+[32m+[m[32m            result = data[m
+[32m+[m
+[32m+[m[32m    with urlopen(req, timeout=timeout) as response:[m
+[32m+[m[32m        for raw in response:[m
+[32m+[m[32m            line = raw.decode("utf-8", errors="replace").rstrip("\r\n")[m
+[32m+[m[32m            if not line:[m
+[32m+[m[32m                consume_event()[m
+[32m+[m[32m                event_name = "message"[m
+[32m+[m[32m                data_lines = [][m
+[32m+[m[32m            elif line.startswith("event:"):[m
+[32m+[m[32m                event_name = line[6:].strip()[m
+[32m+[m[32m            elif line.startswith("data:"):[m
+[32m+[m[32m                data_lines.append(line[5:].lstrip())[m
+[32m+[m[32m        consume_event()[m
+[32m+[m
+[32m+[m[32m    wall_ms = round((time.perf_counter() - started) * 1000)[m
+[32m+[m[32m    if result is None:[m
+[32m+[m[32m        raise RuntimeError("Stream ended without a result event")[m
+[32m+[m[32m    answer = result.get("answer") or ""[m
+[32m+[m[32m    status = result.get("status")[m
+[32m+[m[32m    source_count = len(result.get("sources") or [])[m
+[32m+[m[32m    citation_count = len(re.findall(r"\[\d+\]", answer))[m
+[32m+[m[32m    quality_flags = [][m
+[32m+[m[32m    if not answer.strip():[m
+[32m+[m[32m        quality_flags.append("empty_answer")[m
+[32m+[m[32m    if status in ("supported", "conflict") and not source_count:[m
+[32m+[m[32m        quality_flags.append("claim_without_source")[m
+[32m+[m[32m    if name == "missing" and status != "missing":[m
+[32m+[m[32m        quality_flags.append("invented_topic_not_marked_missing")[m
+[32m+[m[32m    return {[m
+[32m+[m[32m        "case": name,[m
+[32m+[m[32m        "question": question,[m
+[32m+[m[32m        "status": status,[m
+[32m+[m[32m        "wall_ms": wall_ms,[m
+[32m+[m[32m        "first_token_ms": first_token_ms,[m
+[32m+[m[32m        "server_latency_ms": result.get("latency_ms"),[m
+[32m+[m[32m        "sources": source_count,[m
+[32m+[m[32m        "citations": citation_count,[m
+[32m+[m[32m        "quality_flags": quality_flags,[m
+[32m+[m[32m        "confidence": result.get("confidence"),[m
+[32m+[m[32m        "answer": answer,[m
+[32m+[m[32m        "tools": tools,[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef main() -> int:[m
+[32m+[m[32m    parser = argparse.ArgumentParser(description=__doc__)[m
+[32m+[m[32m    parser.add_argument("--base-url", default="http://127.0.0.1:8000")[m
+[32m+[m[32m    parser.add_argument("--case", action="append", choices=CASES, dest="cases")[m
+[32m+[m[32m    parser.add_argument("--repeat", type=int, default=1)[m
+[32m+[m[32m    parser.add_argument("--timeout", type=float, default=300)[m
+[32m+[m[32m    parser.add_argument("--output", type=Path, help="Optional JSON report path")[m
+[32m+[m[32m    args = parser.parse_args()[m
+[32m+[m[32m    if args.repeat < 1:[m
+[32m+[m[32m        parser.error("--repeat must be at least 1")[m
+[32m+[m[32m    base = args.base_url.rstrip("/")[m
+[32m+[m[32m    try:[m
+[32m+[m[32m        health = request_json(base, "/api/health")[m
+[32m+[m[32m        token = access_token(base)[m
+[32m+[m[32m    except (HTTPError, URLError, TimeoutError, ValueError, KeyError) as exc:[m
+[32m+[m[32m        print(f"Preflight failed: {exc}", file=sys.stderr)[m
+[32m+[m[32m        return 2[m
+[32m+[m[32m    print(f"API: {health.get('status', 'unknown')} | cases: {len(args.cases or CASES)} | repeat: {args.repeat}")[m
+[32m+[m[32m    rows = [][m
+[32m+[m[32m    for _ in range(args.repeat):[m
+[32m+[m[32m        for name in args.cases or CASES:[m
+[32m+[m[32m            try:[m
+[32m+[m[32m                row = run_case(base, token, name, args.timeout)[m
+[32m+[m[32m            except (HTTPError, URLError, TimeoutError, RuntimeError) as exc:[m
+[32m+[m[32m                row = {"case": name, "error": str(exc)}[m
+[32m+[m[32m            rows.append(row)[m
+[32m+[m[32m            if "error" in row:[m
+[32m+[m[32m                print(f"{name:15} ERROR {row['error']}")[m
+[32m+[m[32m            else:[m
+[32m+[m[32m                print([m
+[32m+[m[32m                    f"{name:15} {str(row['status']):10} "[m
+[32m+[m[32m                    f"total={row['wall_ms']:6}ms first={str(row['first_token_ms']):>6}ms "[m
+[32m+[m[32m                    f"sources={row['sources']} citations={row['citations']}"[m
+[32m+[m[32m                    + (f" flags={','.join(row['quality_flags'])}" if row["quality_flags"] else "")[m
+[32m+[m[32m                )[m
+[32m+[m[32m    successful = [r for r in rows if "wall_ms" in r][m
+[32m+[m[32m    wall_times = sorted(r["wall_ms"] for r in successful)[m
+[32m+[m[32m    summary = {[m
+[32m+[m[32m        "completed": len(successful),[m
+[32m+[m[32m        "failed": len(rows) - len(successful),[m
+[32m+[m[32m        "median_wall_ms": round(statistics.median(r["wall_ms"] for r in successful))[m
+[32m+[m[32m        if successful else None,[m
+[32m+[m[32m        "max_wall_ms": max((r["wall_ms"] for r in successful), default=None),[m
+[32m+[m[32m        "p95_wall_ms": wall_times[max(0, (95 * len(wall_times) + 99) // 100 - 1)][m
+[32m+[m[32m        if wall_times else None,[m
+[32m+[m[32m        "median_first_token_ms": round([m
+[32m+[m[32m            statistics.median([m
+[32m+[m[32m                r["first_token_ms"] for r in successful if r["first_token_ms"] is not None[m
+[32m+[m[32m            )[m
+[32m+[m[32m        ) if any(r["first_token_ms"] is not None for r in successful) else None,[m
+[32m+[m[32m        "quality_flags": sum(len(r["quality_flags"]) for r in successful),[m
+[32m+[m[32m    }[m
+[32m+[m[32m    print("Summary:", json.dumps(summary, ensure_ascii=False))[m
+[32m+[m[32m    if args.output:[m
+[32m+[m[32m        args.output.parent.mkdir(parents=True, exist_ok=True)[m
+[32m+[m[32m        args.output.write_text([m
+[32m+[m[32m            json.dumps({"summary": summary, "results": rows}, ensure_ascii=False, indent=2),[m
+[32m+[m[32m            encoding="utf-8",[m
+[32m+[m[32m        )[m
+[32m+[m[32m        print(f"Saved: {args.output}")[m
+[32m+[m[32m    return 1 if summary["failed"] else 0[m
+[32m+[m
+[32m+[m
+[32m+[m[32mif __name__ == "__main__":[m
+[32m+[m[32m    raise SystemExit(main())[m
