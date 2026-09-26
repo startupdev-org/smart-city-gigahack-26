@@ -60,6 +60,28 @@ def _ensure_vector_index() -> None:
         logger.warning("HNSW index skipped: %s", exc)
 
 
+def _migrate_schema() -> None:
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS approved BOOLEAN DEFAULT FALSE"
+                )
+            )
+            conn.execute(
+                text("UPDATE users SET approved = TRUE WHERE role = 'admin'")
+            )
+            conn.execute(
+                text("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS answer TEXT")
+            )
+            conn.execute(
+                text("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS detail TEXT")
+            )
+        logger.info("Schema migrate ok")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Schema migrate: %s", exc)
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     from backend.ai.mode_banner import print_llm_mode_banner
