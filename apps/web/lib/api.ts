@@ -1,6 +1,5 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL?.trim() || "";
-const STREAM_URL =
-  process.env.NEXT_PUBLIC_API_URL?.trim() || "http://127.0.0.1:8000";
+/** API base from repo-root .env (NEXT_PUBLIC_API_URL). No localhost fallback. */
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");
 
 function url(path: string) {
   return `${API_URL}${path}`;
@@ -212,7 +211,7 @@ export async function apiChatStream(
   },
   opts?: { token?: string; sessionId?: number | null; uiLanguage?: string }
 ): Promise<ChatResponse> {
-  const res = await fetch(`${STREAM_URL}/api/chat/stream`, {
+  const res = await fetch(`${API_URL}/api/chat/stream`, {
     method: "POST",
     headers: {
       ...authHeaders(opts?.token),

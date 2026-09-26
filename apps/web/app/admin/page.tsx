@@ -195,7 +195,7 @@ export default function AdminPage() {
     jobs.push(
       settled(
         fetch(
-          `${process.env.NEXT_PUBLIC_API_URL?.trim() || "http://127.0.0.1:8000"}/api/tools`
+          `${(process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "")}/api/tools`
         ).then((r) => {
           if (!r.ok) throw new Error("tools");
           return r.json();

@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# Do not use per-app env files — load repo-root .env only
+apps/web/.env
 apps/web/.env.local
 apps/web/.env*.local
 
