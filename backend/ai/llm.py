@@ -180,6 +180,40 @@ class LLMService:
         data.pop("sources", None)
         return data
 
+    def classify_topic_relevance(self, question: str) -> dict[str, Any]:
+        """Cheap first-pass: is this a Chișinău municipal question worth RAG?"""
+        user = (
+            "You are a gatekeeper for CivicAI, a Chișinău City Hall assistant.\n"
+            "Decide if the user question is ABOUT municipal / public-administration topics "
+            "for Chișinău (permits, contacts, preturi, jobs/concursuri, taxes, schools under "
+            "municipality, urbanism, services, official announcements, etc.).\n"
+            "Mark OFF-TOPIC if: chit-chat, jokes, identity of the AI, general world knowledge, "
+            "coding, recipes, other cities only, homework unrelated to the municipality, "
+            "personal advice with no municipal angle.\n"
+            "Return ONLY JSON: "
+            '{"relevant": true|false, "reason": "short"}\n\n'
+            f"Question: {question}"
+        )
+        try:
+            content = self._chat_once(
+                system="Reply with JSON only. relevant=false when not Chișinău municipal.",
+                user=user,
+                max_tokens=80,
+            )
+            data = _extract_json(content)
+            relevant = bool(data.get("relevant"))
+            reason = str(data.get("reason") or "")[:160]
+            return {"relevant": relevant, "reason": reason, "source": "llm"}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("classify_topic_relevance failed: %s", exc)
+            # Fail open for municipal-looking questions; fail closed only if empty
+            return {
+                "relevant": bool((question or "").strip()),
+                "reason": "classifier_error",
+                "source": "fallback",
+                "error": str(exc)[:120],
+            }
+
     def expand_search_queries(self, question: str, *, max_queries: int = 4) -> list[str]:
         user = (
             "Given this Chișinău municipal Q&A question, propose alternative search "

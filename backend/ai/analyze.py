@@ -207,6 +207,75 @@ def is_job_question(question: str) -> bool:
     return detect_intent(question) == "concurs" or bool(_JOB_RE.search(question or ""))
 
 
+_MUNICIPAL_HINT_RE = re.compile(
+    r"(?:"
+    r"primar|pretur|chi[sș]in[aă]u|municip|autoriz|urbanism|construir|"
+    r"certificat|peti[tț]|sesizar|tax[aă]|impozit|parcaj|gunoi|salubriz|"
+    r"concurs|func[tț]i|vacant|angajar|dgaurf|ghiseu|ghi[sș]eu|"
+    r"contact|telefon|adres[aă]|program\s+de\s+lucru|act\s+necesar|"
+    r"dispozi[tț]|hot[aă]r[aâ]r|regulament|e-permis|locuin|"
+    r"botanica|buiucani|ciocana|r[aâ][sș]can|centru\s+sector|"
+    r"gradinit|grădini[tț]|scol[aă]|școal|transport\s+public|"
+    r"аптека|примар|претур|кишин|разрешен|налог|конкурс"
+    r")",
+    re.I,
+)
+
+_CLEAR_OFFTOPIC_RE = re.compile(
+    r"(?:"
+    r"cine\s+sunt\s+eu|who\s+am\s+i|как\s+меня\s+зовут|кто\s+я|"
+    r"ce\s+(?:mi-ai|ti-am|ți-am|ti\s+am)\s+(?:scris|spus|zise)|"
+    r"what\s+did\s+i\s+(?:say|write)|previous\s+message|istoric(ul)?\s+chat|"
+    r"îți\s+amintești|iti\s+amintesti|remember\s+what|"
+    r"spune[- ]mi\s+o\s+glum[aă]|tell\s+me\s+a\s+joke|ban[aă]n[aă]|pizza|"
+    r"cum\s+te\s+cheam[aă]|what\s+is\s+your\s+name|who\s+are\s+you|"
+    r"scrie[- ]mi\s+(?:un\s+)?(?:cod|script|poem)|write\s+(?:me\s+)?(?:code|poem)|"
+    r"re[tț]et[aă]|recipe|cum\s+s[aă]\s+fac\s+bani|crypto|bitcoin|"
+    r"vremea\s+la\s+paris|weather\s+in|capitala\s+fran[tț]|"
+    r"hello\s*$|salutare\s*$|buna\s*$|hi\s*$|hey\s*$"
+    r")",
+    re.I,
+)
+
+
+def looks_municipal(question: str) -> bool:
+    return bool(_MUNICIPAL_HINT_RE.search(question or ""))
+
+
+def looks_clearly_offtopic(question: str) -> bool:
+    q = (question or "").strip()
+    if len(q) < 2:
+        return True
+    if _CLEAR_OFFTOPIC_RE.search(q):
+        return True
+    # Very short chit-chat without municipal terms
+    if len(q) < 12 and not looks_municipal(q):
+        return True
+    return False
+
+
+def offtopic_reply(lang: str = "ro") -> str:
+    if lang == "ru":
+        return (
+            "Этот вопрос не относится к муниципальным услугам и документам "
+            "Примэрии Кишинёва. CivicAI помогает только с темами городской администрации "
+            "(разрешения, контакты, конкурсы, налоги, услуги). "
+            "Пожалуйста, задайте вопрос по теме города."
+        )
+    if lang == "en":
+        return (
+            "This question is outside CivicAI's scope. I only help with Chișinău "
+            "municipal topics (permits, contacts, public jobs, taxes, city services). "
+            "Please ask something related to City Hall."
+        )
+    return (
+        "Această întrebare nu ține de serviciile și documentele Primăriei Municipiului "
+        "Chișinău. CivicAI te poate ajuta doar cu teme municipale "
+        "(autorizații, contacte, concursuri/funcții publice, taxe, servicii). "
+        "Te rog reformulează o întrebare legată de administrația locală."
+    )
+
+
 def analyze_question_meta(
     question: str, *, ui_language: str | None = None
 ) -> dict[str, Any]:
@@ -227,4 +296,6 @@ def analyze_question_meta(
         "wants_current": wc,
         "topic_terms": topics,
         "is_job": is_job_question(question),
+        "looks_municipal": looks_municipal(question),
+        "looks_offtopic": looks_clearly_offtopic(question),
     }

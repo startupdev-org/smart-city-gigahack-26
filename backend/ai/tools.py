@@ -16,6 +16,9 @@ from sqlalchemy.orm import Session
 from backend.ai.analyze import (
     analyze_question_meta,
     fold,
+    looks_clearly_offtopic,
+    looks_municipal,
+    offtopic_reply,
     topic_terms as extract_topic_terms,
 )
 from backend.ai.prompts import CHISINAU_TZ
@@ -109,6 +112,7 @@ INSTITUTION_CONTACTS: dict[str, dict[str, str]] = {
 
 TOOL_CATALOG = [
     {"name": "analyze_question", "optional": False, "label_ro": "Analizez întrebarea", "label_ru": "Анализирую вопрос", "label_en": "Analyzing question"},
+    {"name": "scope_gate", "optional": False, "label_ro": "Verific dacă e pe temă", "label_ru": "Проверяю тему", "label_en": "Checking topic relevance"},
     {"name": "detect_institution", "optional": False, "label_ro": "Identific instituția", "label_ru": "Определяю учреждение", "label_en": "Detecting institution"},
     {"name": "build_search_query", "optional": False, "label_ro": "Reformulez căutarea", "label_ru": "Переформулирую запрос", "label_en": "Building search query"},
     {"name": "search_corpus", "optional": False, "label_ro": "Caut în corpus", "label_ru": "Ищу в корпусе", "label_en": "Searching corpus"},
@@ -209,6 +213,7 @@ class AgentState:
     health: dict[str, Any] = field(default_factory=dict)
     tools_run: list[str] = field(default_factory=list)
     contact_answer: str | None = None
+    scope_rejected: bool = False
 
 
 def _meta(name: str) -> dict[str, Any]:
@@ -307,6 +312,50 @@ def tool_analyze_question(
         "urls": urls,
         "year_now": _now_year(),
     }
+
+
+def tool_scope_gate(question: str, *, language: str = "ro") -> dict[str, Any]:
+    """First-pass: reject clear chit-chat / off-topic before any corpus search."""
+    if looks_clearly_offtopic(question) and not looks_municipal(question):
+        return {
+            "summary": "În afara temei (heuristic)",
+            "relevant": False,
+            "reason": "clear_offtopic",
+            "source": "heuristic",
+            "reply": offtopic_reply(language),
+        }
+    if looks_municipal(question):
+        return {
+            "summary": "Pe temă municipală (heuristic)",
+            "relevant": True,
+            "reason": "municipal_keywords",
+            "source": "heuristic",
+            "reply": None,
+        }
+    # Ambiguous → one cheap LLM call
+    try:
+        from backend.ai.llm import get_llm_service
+
+        judged = get_llm_service().classify_topic_relevance(question)
+        relevant = bool(judged.get("relevant"))
+        return {
+            "summary": (
+                "Pe temă (LLM)" if relevant else "În afara temei (LLM)"
+            ),
+            "relevant": relevant,
+            "reason": judged.get("reason") or "",
+            "source": judged.get("source") or "llm",
+            "reply": None if relevant else offtopic_reply(language),
+        }
+    except Exception as exc:  # noqa: BLE001
+        # Prefer searching rather than wrongly blocking municipal questions
+        return {
+            "summary": f"Gate skip ({exc.__class__.__name__})",
+            "relevant": True,
+            "reason": "gate_error_fail_open",
+            "source": "fallback",
+            "reply": None,
+        }
 
 
 def tool_detect_institution(question: str) -> dict[str, Any]:
@@ -1689,6 +1738,27 @@ def run_agent_pipeline(
         state.topic_terms = list(analyzed.get("topic_terms") or [])
         state.urls_in_question = analyzed.get("urls") or []
         state.intent = analyzed.get("intent") or "general"
+
+    # 1b scope gate — skip RAG for off-topic / trivial chat
+    yield _start_event("scope_gate")
+    scoped, ev = run_tool(
+        "scope_gate",
+        lambda: tool_scope_gate(question, language=state.language or "ro"),
+    )
+    yield ev
+    state.tools_run.append("scope_gate")
+    if scoped and not scoped.get("relevant", True):
+        state.scope_rejected = True
+        state.gate = "missing"
+        state.usable = []
+        state.hits = []
+        state.contact_answer = scoped.get("reply") or offtopic_reply(
+            state.language or "ro"
+        )
+        state.confidence = "high"
+        state.confidence_score = 0.9
+        yield state
+        return
 
     # 2 detect institution
     yield _start_event("detect_institution")

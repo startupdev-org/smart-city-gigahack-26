@@ -19,11 +19,20 @@ class RerankerService:
         if self._ranker is None:
             from FlagEmbedding import FlagReranker
 
-            logger.info("Loading reranker %s …", self.model_name)
+            use_fp16 = False
+            try:
+                import torch
+
+                use_fp16 = bool(torch.cuda.is_available())
+            except Exception:  # noqa: BLE001
+                use_fp16 = False
+            logger.info(
+                "Loading reranker %s (fp16=%s) …", self.model_name, use_fp16
+            )
             # shorter max_length ≈ much faster on CPU / 8GB GPU
             self._ranker = FlagReranker(
                 self.model_name,
-                use_fp16=False,
+                use_fp16=use_fp16,
                 max_length=128,
             )
         return self._ranker

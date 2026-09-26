@@ -19,6 +19,7 @@ from backend.ai.verifier import (
     question_about_deadline,
     verify_evidence,
 )
+from backend.ai.analyze import offtopic_reply
 from backend.api.auth import User, require_approved
 from backend.db.database import get_db
 from backend.db.models import TopicLink
@@ -325,12 +326,17 @@ def _build_response(*, body: ChatRequest, db: Session) -> ChatResponse:
     links = db.query(TopicLink).all()
 
     if is_offtopic_question(body.question):
+        from backend.ai.language import resolve_answer_language
+
+        lang_meta = resolve_answer_language(body.question, body.ui_language)
+        lang = lang_meta["answer_language"]
         return ChatResponse(
             status="missing",
-            answer=_missing_answer(lang),
+            answer=offtopic_reply(lang),
             sources=[],
             next_action=None,
             confidence="high",
+            confidence_score=0.9,
             language=lang,
         )
 
@@ -435,7 +441,7 @@ def chat_stream(
                 lang = lang_meta["answer_language"]
                 result = {
                     "status": "missing",
-                    "answer": _missing_answer(lang),
+                    "answer": offtopic_reply(lang),
                     "sources": [],
                     "next_action": None,
                     "confidence": "high",
@@ -443,7 +449,7 @@ def chat_stream(
                     "language": lang,
                     "evidence_preview": [],
                     "conflicts": [],
-                    "tools_used": ["analyze_question"],
+                    "tools_used": ["analyze_question", "scope_gate"],
                     "latency_ms": int((_time.perf_counter() - t0) * 1000),
                     "session_id": None,
                 }
@@ -527,13 +533,19 @@ def chat_stream(
                 )
 
             if gate == "missing" and not state.fetched:
+                answer = (
+                    state.contact_answer
+                    if (state.scope_rejected and state.contact_answer)
+                    else _missing_answer(lang)
+                )
                 result = {
                     "status": "missing",
-                    "answer": _missing_answer(lang),
+                    "answer": answer,
                     "sources": [],
                     "next_action": na.model_dump() if na else None,
                     "confidence": state.confidence or "high",
-                    "confidence_score": state.confidence_score or 0.2,
+                    "confidence_score": state.confidence_score
+                    or (0.9 if state.scope_rejected else 0.2),
                     "language": lang,
                     "evidence_preview": [],
                     "conflicts": [],

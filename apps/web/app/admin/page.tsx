@@ -65,9 +65,9 @@ function money(n: unknown, suffix = "USD") {
 export default function AdminPage() {
   const { user, ready, logout, login } = useAuth();
   const router = useRouter();
-  const [stats, setStats] = useState<Record<string, unknown> | null>(null);
-  const [cost, setCost] = useState<Record<string, unknown> | null>(null);
-  const [health, setHealth] = useState<Record<string, unknown> | null>(null);
+  const [stats, setStats] = useState<any>(null);
+  const [cost, setCost] = useState<any>(null);
+  const [health, setHealth] = useState<any>(null);
   const [demo, setDemo] = useState<{ count: number; items: any[] } | null>(null);
   const [llm, setLlm] = useState<LlmSettings | null>(null);
   const [llmBusy, setLlmBusy] = useState(false);
@@ -594,7 +594,7 @@ export default function AdminPage() {
                 ["Util %", stats.feedback_useful_pct ?? "—"],
               ].map(([k, v]) => (
                 <div key={String(k)} className="admin-kpi">
-                  <div className="admin-kpi-label">{k}</div>
+                  <div className="admin-kpi-label">{String(k)}</div>
                   <div className="admin-kpi-value">{String(v)}</div>
                 </div>
               ))}
@@ -1043,9 +1043,9 @@ export default function AdminPage() {
               </div>
             )}
 
-            {cost?.recommendation && (
+            {cost?.recommendation != null && String(cost.recommendation) !== "" ? (
               <p className="admin-callout">{String(cost.recommendation)}</p>
-            )}
+            ) : null}
 
             {scenarios.length > 0 && (
               <div className="admin-table-wrap" style={{ marginTop: 16 }}>
