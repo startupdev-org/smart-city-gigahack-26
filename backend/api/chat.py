@@ -19,7 +19,7 @@ from backend.ai.verifier import (
     question_about_deadline,
     verify_evidence,
 )
-from backend.ai.analyze import offtopic_reply
+from backend.ai.analyze import identity_reply, looks_identity_question, offtopic_reply
 from backend.api.auth import User, require_approved
 from backend.db.database import get_db
 from backend.db.models import TopicLink
@@ -330,9 +330,14 @@ def _build_response(*, body: ChatRequest, db: Session) -> ChatResponse:
 
         lang_meta = resolve_answer_language(body.question, body.ui_language)
         lang = lang_meta["answer_language"]
+        answer = (
+            identity_reply(lang)
+            if looks_identity_question(body.question)
+            else offtopic_reply(lang)
+        )
         return ChatResponse(
             status="missing",
-            answer=offtopic_reply(lang),
+            answer=answer,
             sources=[],
             next_action=None,
             confidence="high",
@@ -439,9 +444,14 @@ def chat_stream(
 
                 lang_meta = resolve_answer_language(body.question, body.ui_language)
                 lang = lang_meta["answer_language"]
+                answer = (
+                    identity_reply(lang)
+                    if looks_identity_question(body.question)
+                    else offtopic_reply(lang)
+                )
                 result = {
                     "status": "missing",
-                    "answer": offtopic_reply(lang),
+                    "answer": answer,
                     "sources": [],
                     "next_action": None,
                     "confidence": "high",

@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session
 from backend.ai.analyze import (
     analyze_question_meta,
     fold,
+    identity_reply,
     looks_clearly_offtopic,
+    looks_identity_question,
     looks_municipal,
     offtopic_reply,
     topic_terms as extract_topic_terms,
@@ -315,7 +317,17 @@ def tool_analyze_question(
 
 
 def tool_scope_gate(question: str, *, language: str = "ro") -> dict[str, Any]:
-    """First-pass: reject clear chit-chat / off-topic before any corpus search."""
+    """First-pass: reject chit-chat / identity / off-topic before any corpus search."""
+    # Identity about the assistant → fixed intro, no RAG
+    if looks_identity_question(question) and not looks_municipal(question):
+        return {
+            "summary": "Identitate asistent (fără căutare)",
+            "relevant": False,
+            "reason": "identity",
+            "source": "heuristic",
+            "reply": identity_reply(language),
+            "kind": "identity",
+        }
     if looks_clearly_offtopic(question) and not looks_municipal(question):
         return {
             "summary": "În afara temei (heuristic)",
@@ -323,6 +335,7 @@ def tool_scope_gate(question: str, *, language: str = "ro") -> dict[str, Any]:
             "reason": "clear_offtopic",
             "source": "heuristic",
             "reply": offtopic_reply(language),
+            "kind": "offtopic",
         }
     if looks_municipal(question):
         return {
@@ -331,13 +344,19 @@ def tool_scope_gate(question: str, *, language: str = "ro") -> dict[str, Any]:
             "reason": "municipal_keywords",
             "source": "heuristic",
             "reply": None,
+            "kind": "municipal",
         }
-    # Ambiguous → one cheap LLM call
+    # Ambiguous → one cheap LLM call, but never trust "relevant" without municipal cues
     try:
         from backend.ai.llm import get_llm_service
 
         judged = get_llm_service().classify_topic_relevance(question)
         relevant = bool(judged.get("relevant"))
+        # Safety: short / non-municipal questions cannot be forced on-topic by LLM
+        q = (question or "").strip()
+        if relevant and not looks_municipal(q) and len(fold(q)) < 40:
+            relevant = False
+            judged["reason"] = "llm_overrode_short_non_municipal"
         return {
             "summary": (
                 "Pe temă (LLM)" if relevant else "În afara temei (LLM)"
@@ -346,15 +365,26 @@ def tool_scope_gate(question: str, *, language: str = "ro") -> dict[str, Any]:
             "reason": judged.get("reason") or "",
             "source": judged.get("source") or "llm",
             "reply": None if relevant else offtopic_reply(language),
+            "kind": "municipal" if relevant else "offtopic",
         }
     except Exception as exc:  # noqa: BLE001
-        # Prefer searching rather than wrongly blocking municipal questions
+        # Without municipal hints, fail closed (no useless corpus search)
+        if not looks_municipal(question):
+            return {
+                "summary": "În afara temei (fallback)",
+                "relevant": False,
+                "reason": f"gate_error_fail_closed:{exc.__class__.__name__}",
+                "source": "fallback",
+                "reply": offtopic_reply(language),
+                "kind": "offtopic",
+            }
         return {
             "summary": f"Gate skip ({exc.__class__.__name__})",
             "relevant": True,
             "reason": "gate_error_fail_open",
             "source": "fallback",
             "reply": None,
+            "kind": "municipal",
         }
 
 

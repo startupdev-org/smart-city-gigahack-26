@@ -183,20 +183,20 @@ class LLMService:
     def classify_topic_relevance(self, question: str) -> dict[str, Any]:
         """Cheap first-pass: is this a Chișinău municipal question worth RAG?"""
         user = (
-            "You are a gatekeeper for CivicAI, a Chișinău City Hall assistant.\n"
-            "Decide if the user question is ABOUT municipal / public-administration topics "
-            "for Chișinău (permits, contacts, preturi, jobs/concursuri, taxes, schools under "
-            "municipality, urbanism, services, official announcements, etc.).\n"
-            "Mark OFF-TOPIC if: chit-chat, jokes, identity of the AI, general world knowledge, "
-            "coding, recipes, other cities only, homework unrelated to the municipality, "
-            "personal advice with no municipal angle.\n"
-            "Return ONLY JSON: "
-            '{"relevant": true|false, "reason": "short"}\n\n'
+            "You are a STRICT gatekeeper for CivicAI (Chișinău City Hall assistant).\n"
+            "relevant=true ONLY if the question is about municipal / public-administration "
+            "topics for Chișinău: permits, contacts, preturi, public jobs/concursuri, taxes, "
+            "urbanism, city services, official announcements, municipal schools/kindergartens.\n"
+            "relevant=false for ALL of: who are you / ce ești tu / greetings, jokes, recipes, "
+            "coding, general trivia, other cities, personal advice, chat memory, AI identity.\n"
+            'Return ONLY JSON: {"relevant": true|false, "reason": "short"}\n\n'
             f"Question: {question}"
         )
         try:
             content = self._chat_once(
-                system="Reply with JSON only. relevant=false when not Chișinău municipal.",
+                system=(
+                    "JSON only. Default to relevant=false unless clearly Chișinău municipal."
+                ),
                 user=user,
                 max_tokens=80,
             )
@@ -206,9 +206,8 @@ class LLMService:
             return {"relevant": relevant, "reason": reason, "source": "llm"}
         except Exception as exc:  # noqa: BLE001
             logger.warning("classify_topic_relevance failed: %s", exc)
-            # Fail open for municipal-looking questions; fail closed only if empty
             return {
-                "relevant": bool((question or "").strip()),
+                "relevant": False,
                 "reason": "classifier_error",
                 "source": "fallback",
                 "error": str(exc)[:120],

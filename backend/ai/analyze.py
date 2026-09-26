@@ -223,16 +223,38 @@ _MUNICIPAL_HINT_RE = re.compile(
 
 _CLEAR_OFFTOPIC_RE = re.compile(
     r"(?:"
-    r"cine\s+sunt\s+eu|who\s+am\s+i|как\s+меня\s+зовут|кто\s+я|"
+    # identity / about the user or the assistant
+    r"cine\s+(?:e[sș]ti|esti|sunt)\s+(?:tu|eu)|who\s+are\s+you|who\s+am\s+i|"
+    r"ce\s+(?:e[sș]ti|esti)\s+tu|ce\s+e[sș]ti\s+\?|what\s+are\s+you|"
+    r"cum\s+te\s+cheam[aă]|what\s+is\s+your\s+name|your\s+name|"
+    r"despre\s+tine|about\s+yourself|prezint[aă]-te|introduce\s+yourself|"
+    r"как\s+тебя\s+зовут|кто\s+ты|что\s+ты\s+такое|"
+    r"cine\s+sunt\s+eu|как\s+меня\s+зовут|кто\s+я|"
+    # chat memory / previous messages
     r"ce\s+(?:mi-ai|ti-am|ți-am|ti\s+am)\s+(?:scris|spus|zise)|"
     r"what\s+did\s+i\s+(?:say|write)|previous\s+message|istoric(ul)?\s+chat|"
     r"îți\s+amintești|iti\s+amintesti|remember\s+what|"
+    # jokes / entertainment / food
     r"spune[- ]mi\s+o\s+glum[aă]|tell\s+me\s+a\s+joke|ban[aă]n[aă]|pizza|"
-    r"cum\s+te\s+cheam[aă]|what\s+is\s+your\s+name|who\s+are\s+you|"
-    r"scrie[- ]mi\s+(?:un\s+)?(?:cod|script|poem)|write\s+(?:me\s+)?(?:code|poem)|"
-    r"re[tț]et[aă]|recipe|cum\s+s[aă]\s+fac\s+bani|crypto|bitcoin|"
-    r"vremea\s+la\s+paris|weather\s+in|capitala\s+fran[tț]|"
-    r"hello\s*$|salutare\s*$|buna\s*$|hi\s*$|hey\s*$"
+    r"re[tț]et[aă]|recipe|c[aâ]ntec|melodie|film\s+recomand|"
+    # coding / homework / money unrelated
+    r"scrie[- ]mi\s+(?:un\s+)?(?:cod|script|poem|eseu)|write\s+(?:me\s+)?(?:code|poem|essay)|"
+    r"cum\s+s[aă]\s+fac\s+bani|crypto|bitcoin|investe[sș]te|"
+    # other cities / general trivia
+    r"vremea\s+la\s+(?!chi)|weather\s+in|capitala\s+(?:fran[tț]|german|ital)|"
+    r"c[aâ]te\s+planete|who\s+is\s+elon|ce\s+este\s+python|"
+    # pure greetings
+    r"^(?:hello|salutare|salut|bun[aă]|hi|hey|добрый\s+день|привет)[\s!.?]*$"
+    r")",
+    re.I,
+)
+
+_IDENTITY_RE = re.compile(
+    r"(?:"
+    r"cine\s+(?:e[sș]ti|esti)\s+tu|who\s+are\s+you|ce\s+(?:e[sș]ti|esti)\s+tu|"
+    r"cum\s+te\s+cheam[aă]|what\s+is\s+your\s+name|despre\s+tine|"
+    r"prezint[aă]-te|introduce\s+yourself|кто\s+ты|как\s+тебя\s+зовут|"
+    r"what\s+are\s+you|ce\s+fel\s+de\s+(?:asistent|bot|ai)"
     r")",
     re.I,
 )
@@ -242,16 +264,44 @@ def looks_municipal(question: str) -> bool:
     return bool(_MUNICIPAL_HINT_RE.search(question or ""))
 
 
+def looks_identity_question(question: str) -> bool:
+    return bool(_IDENTITY_RE.search(question or ""))
+
+
 def looks_clearly_offtopic(question: str) -> bool:
     q = (question or "").strip()
     if len(q) < 2:
         return True
+    if looks_identity_question(q):
+        return True
     if _CLEAR_OFFTOPIC_RE.search(q):
         return True
     # Very short chit-chat without municipal terms
-    if len(q) < 12 and not looks_municipal(q):
+    if len(fold(q)) < 18 and not looks_municipal(q):
         return True
     return False
+
+
+def identity_reply(lang: str = "ro") -> str:
+    if lang == "ru":
+        return (
+            "Я **CivicAI** — помощник по официальной информации Примэрии муниципия Кишинэу. "
+            "Могу отвечать по разрешениям, контактам, конкурсам на должности, налогам и "
+            "муниципальным услугам — только на основе документов из корпуса. "
+            "Задайте, пожалуйста, вопрос по теме городской администрации."
+        )
+    if lang == "en":
+        return (
+            "I'm **CivicAI**, an assistant for official Chișinău City Hall information. "
+            "I help with permits, contacts, public-job contests, taxes and municipal "
+            "services — only from the indexed corpus. Ask a City Hall–related question."
+        )
+    return (
+        "Sunt **CivicAI**, asistentul pentru informații oficiale ale Primăriei "
+        "Municipiului Chișinău. Te pot ajuta cu autorizații, contacte, concursuri "
+        "pentru funcții publice, taxe și servicii municipale — doar pe baza "
+        "documentelor din corpus. Pune o întrebare legată de administrația locală."
+    )
 
 
 def offtopic_reply(lang: str = "ro") -> str:
