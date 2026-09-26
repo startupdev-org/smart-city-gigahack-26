@@ -104,6 +104,30 @@ def _missing_answer(lang: str) -> str:
     )
 
 
+_MISSING_CLAIM_RE = re.compile(
+    r"(?:"
+    r"nu\s+(?:a\s+fost\s+)?(?:identificat[ăa]|g[ăa]sit[ăa]|disponibil[ăa])|"
+    r"nu\s+(?:exist[ăa]|am\s+g[ăa]sit)|"
+    r"informa[țt]ia\s+nu\s+(?:a\s+fost|este)|"
+    r"not\s+found\s+in\s+(?:the\s+)?(?:available\s+)?(?:municipal\s+)?corpus|"
+    r"no\s+(?:current|matching|relevant)\s+(?:information|announcement)|"
+    r"информаци[яи]\s+не\s+найден"
+    r")",
+    re.I,
+)
+
+
+def _answer_claims_missing(answer: str) -> bool:
+    """True when the model narrates a corpus miss despite a supported gate."""
+    a = (answer or "").strip()
+    if len(a) < 20:
+        return False
+    # Has concrete citations → not a miss claim
+    if re.search(r"\[\d+\]", a):
+        return False
+    return bool(_MISSING_CLAIM_RE.search(a))
+
+
 def _evidence_blocks(chunks: list[RetrievedChunk]) -> list[str]:
     from backend.crawler.html_parser import scrub_indexed_text
 
@@ -750,6 +774,11 @@ def chat_stream(
                 status_val = "missing"
                 answer = _missing_answer(lang)
                 refs = []
+            # Model denied corpus coverage → treat as missing, no anexas
+            if status_val == "supported" and _answer_claims_missing(answer):
+                status_val = "missing"
+                refs = []
+                usable = []
 
             sources_models = _ground_sources(
                 usable, refs, status=status_val, question=body.question
@@ -766,6 +795,11 @@ def chat_stream(
             conflicts_out = state.conflicts or []
             latency = int((_time.perf_counter() - t0) * 1000)
             tools_used = list(state.tools_run) + ["generate_answer"]
+            preview = (
+                []
+                if status_val == "missing"
+                else [_chunk_to_source(h).model_dump() for h in usable]
+            )
 
             result = {
                 "status": status_val,
@@ -775,9 +809,7 @@ def chat_stream(
                 "confidence": state.confidence,
                 "confidence_score": state.confidence_score,
                 "language": lang,
-                "evidence_preview": [
-                    _chunk_to_source(h).model_dump() for h in usable
-                ],
+                "evidence_preview": preview,
                 "conflicts": conflicts_out,
                 "tools_used": tools_used,
                 "corpus": state.health,

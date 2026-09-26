@@ -7,6 +7,7 @@ from backend.ai.analyze import (
     fold,
     is_job_question,
     overlap_score,
+    tokens as analyze_tokens,
     wants_current as analyze_wants_current,
     wants_list as analyze_wants_list,
 )
@@ -109,6 +110,35 @@ def _diversify_by_document(
     return [c for _, c in ranked[:limit]]
 
 
+def _is_junk_chunk(c: RetrievedChunk) -> bool:
+    """Drop captcha / chrome shells that never answer municipal questions."""
+    title = (c.document_title or "").strip()
+    body = c.content or ""
+    blob = f"{title}\n{body[:600]}".lower()
+    if re.search(
+        r"confirm[aă]\s+c[aă]\s+nu\s+e[sș]ti\s+robot|captcha|cloudflare|"
+        r"just\s+a\s+moment|attention\s+required|enable\s+javascript",
+        blob,
+        re.I,
+    ):
+        return True
+    title_f = fold(title)
+    if title_f in {"acte", "pagina oficiala", "home", "acasa"}:
+        if len(re.sub(r"\s+", " ", body).strip()) < 280:
+            return True
+        if title_f == "acte" and not re.search(
+            r"autoriza|construire|certificat\s+de\s+urban|e-permis|dosar",
+            body,
+            re.I,
+        ):
+            return True
+    return False
+
+
+def _content_overlap(question: str, content: str) -> float:
+    return overlap_score(question, content or "")
+
+
 def verify_evidence(
     chunks: list[RetrievedChunk],
     *,
@@ -119,7 +149,7 @@ def verify_evidence(
     answer_mode: str = "fact",
     wants_list: bool | None = None,
 ) -> tuple[str, list[RetrievedChunk]]:
-    """Gate evidence — prefer multi-doc coverage for list/current questions."""
+    """Select evidence by content relevance — not generic short titles."""
     if is_offtopic_question(question):
         return "missing", []
 
@@ -144,17 +174,21 @@ def verify_evidence(
         else (analyze_wants_list(question) or answer_mode == "list")
     )
     job_q = is_job_question(question)
+    q_toks = analyze_tokens(question)
+    rich_q = len(q_toks) >= 2
 
     scored: list[tuple[float, RetrievedChunk]] = []
     for c in chunks:
+        if _is_junk_chunk(c):
+            continue
         body = (c.content or "").lower()
         body_f = fold(c.content or "")
         title_f = fold(c.document_title or "")
+        title_len = len((c.document_title or "").strip())
         if "[expire_date]" in body or "download is available until" in body:
             if len((c.content or "").strip()) < 400:
                 continue
 
-        # Chrome menus are noise ONLY when the user is not asking about that topic
         chrome_keys = [
             "dispozitiile pretorului",
             "cautati pe internet",
@@ -165,12 +199,13 @@ def verify_evidence(
         chrome_hits = sum(1 for k in chrome_keys if fold(k) in body_f)
 
         title_body = f"{c.document_title or ''} {c.content or ''}"
-        ov = _token_overlap(question, title_body)
+        content_ov = _content_overlap(question, c.content or "")
         title_ov = _token_overlap(question, c.document_title or "")
-        if chrome_hits >= 2 and title_ov < 0.25 and ov < 0.30:
+        if title_len <= 12 and title_ov > 0 and content_ov < 0.12:
+            title_ov *= 0.25
+        if chrome_hits >= 2 and content_ov < 0.25:
             continue
 
-        # Holiday vacation pages must not answer job-vacancy questions
         if job_q or re.search(r"concurs|func[tț]|vacant|aplic", question or "", re.I):
             if re.search(
                 r"vacan[țt]e?[ai]?\s+de\s+var|gr[ăa]dini[țt]|copiilor\s+[îi]n\s+vacan|"
@@ -206,75 +241,78 @@ def verify_evidence(
         )
         if wants_current and past_event and not open_call:
             continue
-        # Winner / finished notices must never answer "open jobs now"
         if wants_current and past_event and job_q:
             continue
 
         rr = float(c.rerank_score or 0.0)
         ds = float(c.dense_score or 0.0)
-        # Lexical title hits from SQL often carry high lexical_score
         lx = float(getattr(c, "lexical_score", 0) or 0.0)
-        if (
-            rr >= min_rerank
-            or (ds >= min_dense and ov >= 0.08)
-            or ov >= min_overlap
-            or title_ov >= 0.28
-            or lx >= 0.75
-            or (job_q and open_call and (rr >= 0.15 or lx >= 0.5 or ds >= 0.4))
-        ):
-            score = max(rr, ds * 0.55, ov, lx * 0.5) + title_ov * 0.55
-            if title_ov >= 0.4:
-                score += 0.3
-            if job_q:
-                if re.search(r"anun[țt]|concurs|vacant|aviz", title_f):
-                    score += 0.4
-                if re.search(r"func[tț]|funct|specialist|dosar", title_f):
-                    score += 0.2
-                if open_call:
-                    score += 0.15
-            if chrome_hits >= 2:
-                score -= 0.25
-            if past_event and not open_call:
-                score -= 0.4
-            y = _chunk_year(c)
-            if wants_current and y is not None:
-                if y >= year_now:
-                    score += 0.35
-                elif y >= year_now - 1:
-                    score += 0.02
-                else:
-                    score -= 0.45
-            scored.append((score, c))
+
+        admits = (
+            content_ov >= (0.16 if rich_q else min_overlap)
+            or (rr >= min_rerank and content_ov >= 0.08)
+            or (ds >= min_dense and content_ov >= 0.10)
+            or (title_ov >= 0.45 and content_ov >= 0.10 and title_len > 20)
+            or (job_q and open_call and (content_ov >= 0.08 or lx >= 0.75))
+            or (list_mode and open_call and lx >= 0.9)
+        )
+        if not admits:
+            continue
+
+        score = content_ov * 1.35 + max(rr, ds * 0.5) * 0.55 + title_ov * 0.2
+        if title_ov >= 0.45 and title_len > 24:
+            score += 0.15
+        if job_q:
+            if re.search(r"anun[țt]|concurs|vacant|aviz|posturi\s+vacante", title_f):
+                score += 0.25
+            if open_call:
+                score += 0.12
+        if chrome_hits >= 2:
+            score -= 0.25
+        if past_event and not open_call:
+            score -= 0.4
+        y = _chunk_year(c)
+        if wants_current and y is not None:
+            if y >= year_now:
+                score += 0.35
+            elif y >= year_now - 1:
+                score += 0.02
+            else:
+                score -= 0.45
+        scored.append((score, c))
 
     if not scored:
         return "missing", []
 
     scored.sort(key=lambda x: x[0], reverse=True)
     best = scored[0][0]
-    if best < 0.18:
+    if best < 0.16:
         return "missing", []
 
-    # LIST / multi-item questions: never collapse to title-overlap-only peers
     if list_mode or answer_mode in ("list", "howto"):
         usable = _diversify_by_document(scored, limit=8)
     else:
-        topical = [
-            c
+        strong = [
+            (s, c)
             for s, c in scored
-            if _token_overlap(question, c.document_title or "") >= 0.28
-        ]
-        if topical and not wants_current:
-            usable = topical[:6]
-        else:
-            # Score band — keep peers close to best so secondary docs survive
-            usable = _diversify_by_document(
-                [(s, c) for s, c in scored if s >= max(best * 0.45, 0.16)],
-                limit=8,
+            if _content_overlap(question, c.content or "") >= 0.12
+            or (
+                _token_overlap(question, c.document_title or "") >= 0.4
+                and len((c.document_title or "").strip()) > 24
             )
+        ]
+        band = strong if strong else [
+            (s, c) for s, c in scored if s >= max(best * 0.5, 0.16)
+        ]
+        usable = _diversify_by_document(band, limit=6)
+
     if not usable:
         return "missing", []
 
-    # Current questions: prefer this year; never present ancient-only as "now"
+    best_cov = max(_content_overlap(question, h.content or "") for h in usable)
+    if rich_q and best_cov < 0.10 and not list_mode:
+        return "missing", []
+
     if wants_current:
         fresh = [c for c in usable if (_chunk_year(c) or 0) >= year_now]
         if fresh:

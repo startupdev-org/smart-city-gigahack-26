@@ -84,6 +84,31 @@ _STOP = {
     "o",
     "un",
     "una",
+    # Too generic for retrieval / overlap — drown real topics
+    "acte",
+    "actel",
+    "actele",
+    "trebuie",
+    "document",
+    "documente",
+    "pagina",
+    "pagini",
+    "informatii",
+    "informatie",
+    "informații",
+    "informație",
+    "vreau",
+    "spune",
+    "spuneti",
+    "spuneți",
+    "ajutor",
+    "intrebare",
+    "întrebare",
+    "raspuns",
+    "răspuns",
+    "imi",
+    "îmi",
+    "mie",
 }
 
 
@@ -179,21 +204,38 @@ def answer_mode(question: str, *, intent: str) -> str:
 
 
 def topic_terms(question: str, *, limit: int = 8) -> list[str]:
-    """Distinctive search terms (folded), longest/first-preference."""
+    """Distinctive search terms — skip generic words that poison retrieval."""
+    weak = {
+        "acte",
+        "actele",
+        "trebuie",
+        "document",
+        "documente",
+        "pagina",
+        "informatii",
+        "informatie",
+        "ajutor",
+        "intrebare",
+        "raspuns",
+    }
     toks = sorted(tokens(question), key=lambda w: (-len(w), w))
-    # Keep original-ish forms from question for SQL ilike when useful
     raw = re.findall(r"[A-Za-zăâîșțĂÂÎȘŢțŢёа-яЁА-Я0-9]{4,}", question or "")
     out: list[str] = []
     seen: set[str] = set()
     for w in raw + toks:
         f = fold(w)
-        if f in _STOP or f in seen or len(f) < 4:
+        if f in _STOP or f in weak or f in seen or len(f) < 5:
             continue
         seen.add(f)
         out.append(w)
         if len(out) >= limit:
             break
     return out
+
+
+def distinctive_tokens(question: str) -> set[str]:
+    """Tokens used for relevance scoring (excludes generic retrieval poison)."""
+    return tokens(question)
 
 
 def overlap_score(question: str, text: str) -> float:

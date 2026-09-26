@@ -447,6 +447,8 @@ def tool_build_search_query(
         parts = [
             "autorizație de construire",
             "certificat de urbanism",
+            "e-permis",
+            "acte necesare dosar",
             question,
         ]
         query = " ".join(dict.fromkeys(p for p in parts if p))
@@ -487,15 +489,16 @@ def tool_search_corpus(
     except Exception as exc:  # noqa: BLE001
         hybrid_err = str(exc)[:120]
         logger.warning("hybrid search failed, lexical fallback: %s", hybrid_err)
-    # Title/URL lexical boost for vacancy contests (hybrid often misses short anunț pages)
+    # Intent-specific rescue only for concurs hubs (already specialized)
     if intent == "concurs":
         title_hits = _lexical_concurs_hits(db, limit=10)
         hits = _merge_hits(title_hits, hits, limit=max(k, 10))
-    # General topic title rescue — any mode, when hybrid underranks exact titles
+    # Topic SQL is secondary fill only — never prepend over hybrid (generic terms poison rank)
     if topic_terms:
-        topic_hits = _lexical_topic_hits(db, topic_terms, limit=6)
+        strong = [t for t in topic_terms if len(fold(t)) >= 5]
+        topic_hits = _lexical_topic_hits(db, strong, limit=4) if strong else []
         if topic_hits:
-            hits = _merge_hits(topic_hits, hits, limit=max(k, 10))
+            hits = _merge_hits(hits, topic_hits, limit=max(k, 10))
     if not hits and intent == "concurs":
         hits = _lexical_concurs_hits(db, limit=max(8, top_k))
     summary = f"{len(hits)} pasaje găsite"
@@ -721,9 +724,9 @@ def _lexical_topic_hits(
                 content=text[:2000],
                 page=chunk.page if chunk else None,
                 section=chunk.section if chunk else None,
-                dense_score=0.55,
-                lexical_score=0.85,
-                rerank_score=0.5,
+                dense_score=0.45,
+                lexical_score=0.35,
+                rerank_score=0.35,
             )
         )
         if len(out) >= limit:
@@ -755,62 +758,102 @@ def tool_filter_noise_docs(
     if not hits:
         return {"summary": "Fără hit-uri", "hits": hits, "kept": 0}
 
+    from backend.ai.verifier import _is_junk_chunk
+
+    cleaned = [h for h in hits if not _is_junk_chunk(h)]
+
     if intent == "concurs":
-        cleaned = []
-        for h in hits:
+        keep = []
+        for h in cleaned:
             blob = f"{h.document_title or ''}\n{h.content or ''}"
             if re.search(
                 r"vacan[țt]e?[ai]?\s+de\s+var|gr[ăa]dini[țt]|copiilor\s+[îi]n\s+vacan",
                 blob,
                 re.I,
             ) and not re.search(
-                r"funcț(?:iei|ia|ii)\s+public|ocuparea\s+func|anun[țt].{0,40}concurs",
+                r"func[tț](?:iei|ia|ii)\s+public|ocuparea\s+func|anun[țt].{0,40}concurs",
                 blob,
                 re.I,
             ):
                 continue
-            cleaned.append(h)
-        return {
-            "summary": f"Păstrate {len(cleaned)} (fără vacanță școlară)",
-            "hits": cleaned or hits,
-            "kept": len(cleaned) or len(hits),
-            "dropped": max(0, len(hits) - len(cleaned)),
-        }
+            keep.append(h)
+        cleaned = keep or cleaned
 
-    if intent != "contact":
-        return {"summary": "Fără filtrare zgomot", "hits": hits, "kept": len(hits)}
+    if intent == "contact":
+        def is_noise(h: RetrievedChunk) -> bool:
+            return bool(_VACANCY_RE.search(f"{h.document_title or ''} {h.content or ''}"))
 
-    def is_noise(h: RetrievedChunk) -> bool:
-        blob = f"{h.document_title or ''} {h.content or ''}"
-        if _VACANCY_RE.search(blob):
-            return True
-        # prefer pages that look like contacts
-        return False
+        def contact_score(h: RetrievedChunk) -> float:
+            blob = f"{h.document_title or ''} {h.content or ''}".lower()
+            score = float(h.rerank_score or h.dense_score or h.lexical_score or 0)
+            if "contact" in blob or "telefon" in blob or "@" in blob:
+                score += 0.35
+            if _VACANCY_RE.search(blob):
+                score -= 0.5
+            return score
 
-    def contact_score(h: RetrievedChunk) -> float:
-        blob = f"{h.document_title or ''} {h.content or ''}".lower()
-        score = float(h.rerank_score or h.score or 0)
-        if "contact" in blob or "telefon" in blob or "@" in blob:
-            score += 0.35
-        if _VACANCY_RE.search(blob):
-            score -= 0.5
-        return score
+        contactish = [h for h in cleaned if not is_noise(h)]
+        cleaned = sorted(contactish or cleaned, key=contact_score, reverse=True)
 
-    cleaned = [h for h in hits if not is_noise(h)]
-    if not cleaned:
-        # keep original but re-rank contact-ish first
-        cleaned = sorted(hits, key=contact_score, reverse=True)
-    else:
-        cleaned = sorted(cleaned, key=contact_score, reverse=True)
-    dropped = len(hits) - len(cleaned) if cleaned != hits else sum(
-        1 for h in hits if is_noise(h)
-    )
+    # Intent affinity reorder — prefer docs that actually match the asked service
+    cleaned = _rank_by_intent_affinity(cleaned, intent=intent)
+
+    dropped = len(hits) - len(cleaned)
     return {
-        "summary": f"Păstrate {len(cleaned)} (eliminate {dropped} anunțuri/concurs)",
-        "hits": cleaned,
-        "kept": len(cleaned),
+        "summary": (
+            f"Păstrate {len(cleaned)}"
+            + (f" (eliminate {dropped} zgomot)" if dropped else "")
+        ),
+        "hits": cleaned or hits,
+        "kept": len(cleaned) or len(hits),
         "dropped": dropped,
     }
+
+
+def _rank_by_intent_affinity(
+    hits: list[RetrievedChunk], *, intent: str
+) -> list[RetrievedChunk]:
+    """Reorder candidates by how well they match the detected intent (selection, not SQL boost)."""
+    if not hits or intent not in {"autorizatie", "concurs", "contact"}:
+        return hits
+
+    patterns: list[tuple[re.Pattern[str], float]] = []
+    if intent == "autorizatie":
+        patterns = [
+            (re.compile(r"e-permis|autoriza[țt]ie\s+de\s+construire", re.I), 1.2),
+            (re.compile(r"certificat\s+de\s+urbanism|dgaurf|autourban", re.I), 0.9),
+            (re.compile(r"acte\s+necesare|dosarul?\s+trebuie|lista\s+actelor", re.I), 0.7),
+            (re.compile(r"autoriza|construir|urbanism", re.I), 0.35),
+        ]
+    elif intent == "concurs":
+        patterns = [
+            (re.compile(r"posturi\s+vacante|func[tț]ii\s+publice\s+vacante", re.I), 1.0),
+            (re.compile(r"anun[țt].{0,40}concurs|aviz\s+concurs|ocuparea\s+func", re.I), 0.85),
+            (re.compile(r"specialist|dosar|candidat", re.I), 0.35),
+        ]
+    elif intent == "contact":
+        patterns = [
+            (re.compile(r"contact|telefon|e-?mail|adresa", re.I), 0.8),
+        ]
+
+    def score(h: RetrievedChunk) -> float:
+        blob = f"{h.document_title or ''}\n{h.document_url or ''}\n{(h.content or '')[:1200]}"
+        base = float(
+            h.rerank_score
+            or h.dense_score
+            or h.lexical_score
+            or 0
+        )
+        for pat, w in patterns:
+            if pat.search(blob):
+                base += w
+        # Penalize ultra-short generic titles
+        title = (h.document_title or "").strip()
+        if len(title) <= 8:
+            base -= 0.4
+        return base
+
+    return sorted(hits, key=score, reverse=True)
 
 
 def tool_filter_by_year(

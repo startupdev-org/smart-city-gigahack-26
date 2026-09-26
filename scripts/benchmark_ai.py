@@ -1,6 +1,8 @@
 """Measure the real CivicAI streaming path without saving credentials.
 
 Examples:
+  python3 scripts/benchmark_ai.py
+  python3 scripts/benchmark_ai.py --base-url https://civicai-api.visio.md
   CIVICAI_EMAIL=you@example.com CIVICAI_PASSWORD=... python3 scripts/benchmark_ai.py
   CIVICAI_TOKEN=... python3 scripts/benchmark_ai.py --repeat 3 --output /tmp/civicai-benchmark.json
 """
@@ -31,10 +33,16 @@ CASES = {
 
 def request_json(base: str, path: str, payload: dict | None = None) -> dict:
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {
+        "User-Agent": "CivicAI-benchmark/1.0",
+        "Accept": "application/json",
+    }
+    if body is not None:
+        headers["Content-Type"] = "application/json"
     req = Request(
         base + path,
         data=body,
-        headers={"Content-Type": "application/json"} if body else {},
+        headers=headers,
         method="POST" if body else "GET",
     )
     with urlopen(req, timeout=10) as response:
@@ -45,8 +53,8 @@ def access_token(base: str) -> str:
     token = os.environ.get("CIVICAI_TOKEN", "").strip()
     if token:
         return token
-    email = "admin@civic.ai".strip()
-    password = "admin123".strip()
+    email = os.environ.get("CIVICAI_EMAIL", "admin@civic.ai").strip()
+    password = os.environ.get("CIVICAI_PASSWORD", "admin123").strip()
     if not email or not password:
         raise ValueError("Set CIVICAI_TOKEN or CIVICAI_EMAIL and CIVICAI_PASSWORD")
     return request_json(
@@ -66,6 +74,7 @@ def run_case(base: str, token: str, name: str, timeout: float) -> dict:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
+            "User-Agent": "CivicAI-benchmark/1.0",
         },
         method="POST",
     )
@@ -143,7 +152,11 @@ def run_case(base: str, token: str, name: str, timeout: float) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default="http://127.0.0.1:8000")
+    parser.add_argument(
+        "--base-url",
+        default=os.environ.get("CIVICAI_BASE_URL", "http://127.0.0.1:8000"),
+        help="API root (default: local 8000, or CIVICAI_BASE_URL)",
+    )
     parser.add_argument("--case", action="append", choices=CASES, dest="cases")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--timeout", type=float, default=300)
@@ -157,6 +170,12 @@ def main() -> int:
         token = access_token(base)
     except (HTTPError, URLError, TimeoutError, ValueError, KeyError) as exc:
         print(f"Preflight failed: {exc}", file=sys.stderr)
+        if isinstance(exc, HTTPError) and exc.code == 403:
+            print(
+                "Hint: remote host may block scripts. Use local API:\n"
+                "  python3 scripts/benchmark_ai.py --base-url http://127.0.0.1:8000",
+                file=sys.stderr,
+            )
         return 2
     print(f"API: {health.get('status', 'unknown')} | cases: {len(args.cases or CASES)} | repeat: {args.repeat}")
     rows = []
