@@ -5,26 +5,10 @@ from functools import lru_cache
 
 import numpy as np
 
+from backend.ai.device import pick_torch_device
 from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
-
-
-def _pick_device() -> str:
-    try:
-        import torch
-
-        if torch.cuda.is_available():
-            name = torch.cuda.get_device_name(0)
-            logger.info("Embeddings device: CUDA (%s)", name)
-            return "cuda"
-        if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-            logger.info("Embeddings device: MPS")
-            return "mps"
-    except Exception:  # noqa: BLE001
-        pass
-    logger.info("Embeddings device: CPU")
-    return "cpu"
 
 
 class EmbeddingService:
@@ -39,18 +23,21 @@ class EmbeddingService:
         if self._model is None:
             from sentence_transformers import SentenceTransformer
 
-            self._device = _pick_device()
-            logger.info("Loading embedding model %s on %s …", self.model_name, self._device)
+            self._device = pick_torch_device()
+            logger.info(
+                "Loading embedding model %s on %s …", self.model_name, self._device
+            )
             self._model = SentenceTransformer(self.model_name, device=self._device)
         return self._model
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         model = self._load()
+        batch = 48 if self._device == "cuda" else 8
         vectors = model.encode(
             texts,
             normalize_embeddings=True,
             show_progress_bar=False,
-            batch_size=32 if self._device == "cuda" else 8,
+            batch_size=batch,
         )
         return [v.astype(np.float32).tolist() for v in np.asarray(vectors)]
 

@@ -99,6 +99,12 @@ def on_startup() -> None:
         rt.get("local_model") if provider == "local" else rt.get("groq_model")
     ) or "?"
     print_llm_mode_banner(provider=provider, model=str(model))
+    try:
+        from backend.ai.device import cuda_summary
+
+        logger.info("RAG compute: %s", cuda_summary())
+    except Exception:  # noqa: BLE001
+        pass
     threading.Thread(target=_warm_models, daemon=True).start()
 
 

@@ -106,26 +106,33 @@ def _missing_answer(lang: str) -> str:
 
 _MISSING_CLAIM_RE = re.compile(
     r"(?:"
+    r"^\s*missing\s*$|"
+    r"^\s*lips[aă]\s*$|"
     r"nu\s+(?:a\s+fost\s+)?(?:identificat[ăa]|g[ăa]sit[ăa]|disponibil[ăa])|"
     r"nu\s+(?:exist[ăa]|am\s+g[ăa]sit)|"
     r"informa[țt]ia\s+nu\s+(?:a\s+fost|este)|"
     r"not\s+found\s+in\s+(?:the\s+)?(?:available\s+)?(?:municipal\s+)?corpus|"
     r"no\s+(?:current|matching|relevant)\s+(?:information|announcement)|"
-    r"информаци[яи]\s+не\s+найден"
+    r"информаци[яи]\s+не\s+найден|"
+    r"\bstatus\s*[:=]\s*missing\b"
     r")",
     re.I,
 )
 
 
 def _answer_claims_missing(answer: str) -> bool:
-    """True when the model narrates a corpus miss despite a supported gate."""
+    """True when the model narrates a corpus miss (incl. bare 'missing')."""
     a = (answer or "").strip()
-    if len(a) < 20:
-        return False
-    # Has concrete citations → not a miss claim
+    if not a:
+        return True
+    if re.fullmatch(r"missing|lips[aă]|не\s+найдено|not\s+found\.?", a, re.I):
+        return True
     if re.search(r"\[\d+\]", a):
         return False
-    return bool(_MISSING_CLAIM_RE.search(a))
+    # Short denial without citations
+    if len(a) < 80 and _MISSING_CLAIM_RE.search(a):
+        return True
+    return bool(_MISSING_CLAIM_RE.search(a)) and len(a) < 280
 
 
 def _evidence_blocks(chunks: list[RetrievedChunk]) -> list[str]:
@@ -774,11 +781,17 @@ def chat_stream(
                 status_val = "missing"
                 answer = _missing_answer(lang)
                 refs = []
-            # Model denied corpus coverage → treat as missing, no anexas
-            if status_val == "supported" and _answer_claims_missing(answer):
+            # Model denied corpus coverage → treat as missing, no anexas / CTA
+            if status_val != "conflict" and (
+                status_val == "missing" or _answer_claims_missing(answer)
+            ):
                 status_val = "missing"
+                answer = _missing_answer(lang)
                 refs = []
                 usable = []
+                na = None
+                state.confidence = "low"
+                state.confidence_score = 0.2
 
             sources_models = _ground_sources(
                 usable, refs, status=status_val, question=body.question
@@ -806,11 +819,13 @@ def chat_stream(
                 "answer": answer,
                 "sources": sources,
                 "next_action": na.model_dump() if na else None,
-                "confidence": state.confidence,
-                "confidence_score": state.confidence_score,
+                "confidence": state.confidence if status_val != "missing" else "low",
+                "confidence_score": (
+                    state.confidence_score if status_val != "missing" else 0.2
+                ),
                 "language": lang,
                 "evidence_preview": preview,
-                "conflicts": conflicts_out,
+                "conflicts": conflicts_out if status_val != "missing" else [],
                 "tools_used": tools_used,
                 "corpus": state.health,
                 "latency_ms": latency,
@@ -819,13 +834,17 @@ def chat_stream(
                 status=status_val,
                 answer=answer,
                 sources=sources_models,
-                next_action=na,
-                confidence=state.confidence,
-                confidence_score=state.confidence_score,
+                next_action=na if status_val != "missing" else None,
+                confidence="low" if status_val == "missing" else state.confidence,
+                confidence_score=(
+                    0.2 if status_val == "missing" else state.confidence_score
+                ),
                 language=lang,
                 conflicts=[
                     ConflictPair.model_validate(c) for c in conflicts_out
-                ],
+                ]
+                if status_val != "missing"
+                else [],
                 tools_used=tools_used,
                 latency_ms=latency,
                 corpus=state.health,

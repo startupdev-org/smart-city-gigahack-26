@@ -133,7 +133,9 @@ export function ChatApp() {
   const [dislikeDetail, setDislikeDetail] = useState("");
   const [likes, setLikes] = useState<Record<string, true>>({});
   const [likePulse, setLikePulse] = useState<string | null>(null);
+  const [sideOpen, setSideOpen] = useState(false);
   const messagesEnd = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setLikes(loadLikes());
@@ -231,6 +233,9 @@ export function ChatApp() {
       },
     ]);
     setInput("");
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+    }
     try {
       const data = await apiChatStream(
         question,
@@ -302,10 +307,23 @@ export function ChatApp() {
       setMessages((m) => {
         const copy = [...m];
         const last = copy[copy.length - 1];
+        const missing = data.status === "missing";
+        const answerText = missing
+          ? data.answer && !/^missing\s*$/i.test(String(data.answer).trim())
+            ? data.answer
+            : tx(
+                lang,
+                "Nu am găsit informația în documentele oficiale pe care le am. Reformulează sau întreabă altceva — te ajut cu plăcere.",
+                "Не нашёл информацию в доступных официальных документах. Переформулируйте или спросите о другом.",
+                "I couldn't find this in the official documents I have. Try rephrasing — happy to help."
+              )
+          : data.answer || "";
         copy[copy.length - 1] = {
           role: "assistant",
-          text: data.answer || data.status,
-          data,
+          text: answerText,
+          data: missing
+            ? { ...data, sources: [], next_action: null, evidence_preview: [] }
+            : data,
           tools: last?.tools || [],
           streaming: false,
           typing: false,
@@ -356,7 +374,12 @@ export function ChatApp() {
 
   const placeholder = useMemo(
     () =>
-      tx(lang, "Scrie o întrebare…", "Напишите вопрос…", "Write a question…"),
+      tx(
+        lang,
+        "Scrie ca unui coleg — autorizații, termene, concursuri…",
+        "Пишите как коллеге — разрешения, сроки, конкурсы…",
+        "Write like to a colleague — permits, deadlines, contests…"
+      ),
     [lang]
   );
   const suggestions =
@@ -371,11 +394,23 @@ export function ChatApp() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="side-brand">CIVICAI</div>
+      <div
+        className={`sidebar-backdrop${sideOpen ? " open" : ""}`}
+        onClick={() => setSideOpen(false)}
+        aria-hidden={!sideOpen}
+      />
+      <aside className={`sidebar${sideOpen ? " open" : ""}`}>
+        <div className="side-brand">CivicAI</div>
         <div className="side-top">
-          <button type="button" className="new-chat" onClick={() => void newChat()}>
-            + Chat nou
+          <button
+            type="button"
+            className="new-chat"
+            onClick={() => {
+              setSideOpen(false);
+              void newChat();
+            }}
+          >
+            {tx(lang, "Conversație nouă", "Новый разговор", "New conversation")}
           </button>
         </div>
         <div className="session-list">
@@ -384,7 +419,10 @@ export function ChatApp() {
               key={s.id}
               type="button"
               className={`session ${sessionId === s.id ? "active" : ""}`}
-              onClick={() => void openSession(s.id)}
+              onClick={() => {
+                setSideOpen(false);
+                void openSession(s.id);
+              }}
             >
               <span>{s.title}</span>
               <span
@@ -425,7 +463,7 @@ export function ChatApp() {
               </Link>
             ) : null}
             <button type="button" onClick={onLogout}>
-              Ieșire
+              {tx(lang, "Ieșire", "Выйти", "Sign out")}
             </button>
           </div>
         </div>
@@ -433,7 +471,17 @@ export function ChatApp() {
 
       <main className="chat-main">
         <header className="chat-head">
-          <div className="title">CivicAI</div>
+          <div className="head-left">
+            <button
+              type="button"
+              className="menu-btn"
+              aria-label="Meniu"
+              onClick={() => setSideOpen(true)}
+            >
+              ☰
+            </button>
+            <div className="title">CivicAI</div>
+          </div>
           <div className="head-actions">
             <button
               type="button"
@@ -474,16 +522,23 @@ export function ChatApp() {
             </div>
           ) : messages.length === 0 ? (
             <div className="empty-hero">
-              <span className="hero-badge">Chișinău</span>
+              <span className="hero-badge">
+                {tx(lang, "Primăria Chișinău", "Примэрия Кишинёва", "Chișinău City Hall")}
+              </span>
               <h1>
-                {tx(lang, "Cu ce te putem ajuta?", "Чем можем помочь?", "How can we help?")}
+                {tx(
+                  lang,
+                  "Salut — cu ce te ajut azi?",
+                  "Привет — чем помочь сегодня?",
+                  "Hi — how can I help today?"
+                )}
               </h1>
               <p className="lede">
                 {tx(
                   lang,
-                  "Întreabă despre autorizații, termene, anunțuri — răspunsuri din surse oficiale.",
-                  "Спрашивайте о разрешениях, сроках, объявлениях — ответы из официальных источников.",
-                  "Ask about permits, deadlines, notices — answers from official sources."
+                  "Vorbește natural. Caut în documente oficiale și îți răspund pe scurt, cu surse.",
+                  "Говорите естественно. Ищу в официальных документах и отвечаю коротко, с источниками.",
+                  "Speak naturally. I look up official documents and answer briefly, with sources."
                 )}
               </p>
               <div className="suggest-row">
@@ -499,10 +554,26 @@ export function ChatApp() {
           {canChat &&
             messages.map((m, i) => {
               const srcs = m.data ? uniqueSources(m.data.sources || []) : [];
+              const isMissing =
+                m.data?.status === "missing" ||
+                /^missing\s*$/i.test((m.text || "").trim());
+              const displayText = isMissing
+                ? m.data?.answer && !/^missing\s*$/i.test(m.data.answer.trim())
+                  ? m.data.answer
+                  : tx(
+                      lang,
+                      "Nu am găsit informația în documentele oficiale pe care le am. Reformulează sau întreabă altceva — te ajut cu plăcere.",
+                      "Не нашёл информацию в доступных официальных документах. Переформулируйте или спросите о другом.",
+                      "I couldn't find this in the official documents I have. Try rephrasing — happy to help."
+                    )
+                : m.text;
               return (
-                <div key={i} className={`msg ${m.role}`}>
+                <div
+                  key={i}
+                  className={`msg ${m.role}${isMissing ? " missing" : ""}`}
+                >
                   <div className="msg-inner">
-                    {(m.tools?.length || 0) > 0 && (
+                    {!isMissing && (m.tools?.length || 0) > 0 && (
                       <ToolSteps
                         tools={m.tools!}
                         lang={lang}
@@ -514,17 +585,21 @@ export function ChatApp() {
                         {toolLabel(m.status, lang)}
                       </div>
                     )}
-                    {(m.text || m.typing) && (
+                    {(displayText || m.typing) && (
                       <div className="msg-text">
                         {m.role === "assistant" ? (
-                          <Markdown text={m.text} sources={srcs} lang={lang} />
+                          <Markdown
+                            text={displayText}
+                            sources={isMissing ? [] : srcs}
+                            lang={lang}
+                          />
                         ) : (
-                          m.text
+                          displayText
                         )}
                         {m.typing && <span className="caret" />}
                       </div>
                     )}
-                    {m.data && !m.streaming && (
+                    {m.data && !m.streaming && !isMissing && (
                       <div className="meta">
                         <div className="meta-row">
                           <StatusBadge status={m.data.status} lang={lang} />
@@ -650,7 +725,7 @@ export function ChatApp() {
                             return (
                               <button
                                 type="button"
-                                title="Util"
+                                title={tx(lang, "Util", "Полезно", "Useful")}
                                 className={`like-btn ${liked ? "liked" : ""} ${likePulse === lk ? "pulse" : ""}`}
                                 onClick={() => {
                                   saveLike(lk);
@@ -665,12 +740,16 @@ export function ChatApp() {
                                   });
                                 }}
                               >
-                                👍
+                                {tx(lang, "Util", "Полезно", "Useful")}
                               </button>
                             );
                           })()}
-                          <button type="button" title="Nu e util" onClick={() => setDislikeFor(i)}>
-                            👎
+                          <button
+                            type="button"
+                            title={tx(lang, "Nu e util", "Не полезно", "Not useful")}
+                            onClick={() => setDislikeFor(i)}
+                          >
+                            {tx(lang, "Nu e util", "Не полезно", "Not useful")}
                           </button>
                         </div>
                       </div>
@@ -689,24 +768,43 @@ export function ChatApp() {
             void ask(input);
           }}
         >
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={
-              canChat
-                ? placeholder
-                : tx(
-                    lang,
-                    "Așteaptă aprobarea contului…",
-                    "Ожидайте одобрения…",
-                    "Waiting for account approval…"
-                  )
-            }
-            disabled={busy || !canChat}
-          />
-          <button type="submit" disabled={busy || !canChat || !input.trim()}>
-            {tx(lang, "Trimite", "Отправить", "Send")}
-          </button>
+          <div className="composer-box">
+            <textarea
+              ref={inputRef}
+              rows={1}
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                const el = e.target;
+                el.style.height = "auto";
+                el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!busy && canChat && input.trim()) void ask(input);
+                }
+              }}
+              placeholder={
+                canChat
+                  ? placeholder
+                  : tx(
+                      lang,
+                      "Așteaptă aprobarea contului…",
+                      "Ожидайте одобрения…",
+                      "Waiting for account approval…"
+                    )
+              }
+              disabled={busy || !canChat}
+            />
+            <button
+              type="submit"
+              className="send"
+              disabled={busy || !canChat || !input.trim()}
+            >
+              {tx(lang, "Trimite", "Отправить", "Send")}
+            </button>
+          </div>
         </form>
       </main>
 
@@ -845,7 +943,7 @@ function ToolSteps({
     <div className="tool-timeline" aria-live="polite">
       <div className="tool-head">
         <div className="tool-title">
-          {tx(lang, "Pași agent", "Шаги агента", "Agent steps")}
+          {tx(lang, "Pregătesc răspunsul", "Готовлю ответ", "Preparing answer")}
           <span className="tool-count">
             {doneCount}/{tools.length}
           </span>
@@ -931,14 +1029,14 @@ function StatusBadge({
   if (status === "supported") {
     return (
       <span className="badge">
-        {tx(lang, "Verificat în corpus", "Проверено", "Verified in corpus")}
+        {tx(lang, "Din documente oficiale", "Из официальных документов", "From official documents")}
       </span>
     );
   }
   if (status === "conflict") {
     return (
       <span className="badge danger">
-        {tx(lang, "Informații contradictorii", "Противоречие", "Conflicting information")}
+        {tx(lang, "Sursele se contrazic", "Источники противоречат", "Sources conflict")}
       </span>
     );
   }

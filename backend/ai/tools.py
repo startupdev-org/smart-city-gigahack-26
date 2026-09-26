@@ -444,20 +444,9 @@ def tool_build_search_query(
         query = " ".join(dict.fromkeys(parts))
         return {"summary": f"Query concurs: {query[:90]}…", "query": query}
     if intent == "autorizatie":
-        parts = [
-            "autorizație de construire",
-            "certificat de urbanism",
-            "e-permis",
-            "acte necesare dosar",
-            question,
-        ]
-        query = " ".join(dict.fromkeys(p for p in parts if p))
-        return {"summary": f"Query autorizație: {query[:90]}…", "query": query}
+        # No keyword stuffing — hybrid RRF + reranker must find the right docs
+        return {"summary": "Query original", "query": question}
     if intent != "contact":
-        topics = extract_topic_terms(question, limit=6)
-        if topics and len(question or "") < 40:
-            query = f"{question} {' '.join(topics[:3])}"
-            return {"summary": f"Query: {query[:90]}…", "query": query}
         return {"summary": "Query original", "query": question}
     parts = ["date de contact telefon email adresă"]
     if institution and institution in INSTITUTION_CONTACTS:
@@ -492,13 +481,7 @@ def tool_search_corpus(
     # Intent-specific rescue only for concurs hubs (already specialized)
     if intent == "concurs":
         title_hits = _lexical_concurs_hits(db, limit=10)
-        hits = _merge_hits(title_hits, hits, limit=max(k, 10))
-    # Topic SQL is secondary fill only — never prepend over hybrid (generic terms poison rank)
-    if topic_terms:
-        strong = [t for t in topic_terms if len(fold(t)) >= 5]
-        topic_hits = _lexical_topic_hits(db, strong, limit=4) if strong else []
-        if topic_hits:
-            hits = _merge_hits(hits, topic_hits, limit=max(k, 10))
+        hits = _merge_hits(hits, title_hits, limit=max(k, 10))
     if not hits and intent == "concurs":
         hits = _lexical_concurs_hits(db, limit=max(8, top_k))
     summary = f"{len(hits)} pasaje găsite"
@@ -794,9 +777,6 @@ def tool_filter_noise_docs(
 
         contactish = [h for h in cleaned if not is_noise(h)]
         cleaned = sorted(contactish or cleaned, key=contact_score, reverse=True)
-
-    # Intent affinity reorder — prefer docs that actually match the asked service
-    cleaned = _rank_by_intent_affinity(cleaned, intent=intent)
 
     dropped = len(hits) - len(cleaned)
     return {

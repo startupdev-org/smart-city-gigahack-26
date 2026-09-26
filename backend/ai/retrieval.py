@@ -16,11 +16,14 @@ from backend.db.models import SearchLog
 
 logger = logging.getLogger(__name__)
 
-# Truncate passages before expensive cross-encoder (big win on CPU).
-_RERANK_CHARS = 280
+# Longer passages on GPU → reranker sees real procedure text, not just titles
+_RERANK_CHARS = 800
 _QUERY_CACHE: dict[str, tuple[float, list]] = {}
 _QUERY_CACHE_TTL = 90.0
 _QUERY_CACHE_MAX = 64
+_RRF_K = 60
+# Drop weak cross-encoder hits (semantic mismatch even if dense pulled them in)
+_MIN_RERANK_KEEP = 0.12
 
 
 @dataclass
@@ -47,6 +50,10 @@ def _detect_language(query: str) -> str:
 
 def _cosine_scores(query_vec: np.ndarray, matrix: np.ndarray) -> np.ndarray:
     return matrix @ query_vec
+
+
+def _rrf_score(rank: int, *, k: int = _RRF_K) -> float:
+    return 1.0 / (k + rank + 1)
 
 
 @lru_cache(maxsize=1)
@@ -158,7 +165,39 @@ class HybridRetriever:
             return hits
 
         def lexical_search() -> list[dict]:
+            # websearch_to_tsquery handles multi-word queries better than plainto
             return (
+                self.db.execute(
+                    text(
+                        """
+                        SELECT c.id, c.document_id, d.title, d.url, c.content, c.page, c.section,
+                               ts_rank_cd(
+                                   c.tsv,
+                                   websearch_to_tsquery('simple', unaccent(:q))
+                               ) AS score
+                        FROM chunks c
+                        JOIN documents d ON d.id = c.document_id
+                        WHERE c.tsv @@ websearch_to_tsquery('simple', unaccent(:q))
+                        ORDER BY score DESC
+                        LIMIT :lim
+                        """
+                    ),
+                    {"q": query, "lim": settings.retrieve_lexical_k},
+                )
+                .mappings()
+                .all()
+            )
+
+        t_ret = time.perf_counter()
+        dense_hits = dense_search()
+        dense_ms = (time.perf_counter() - t_ret) * 1000 + embed_ms
+
+        t_lex = time.perf_counter()
+        try:
+            lexical_rows = lexical_search()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("websearch_to_tsquery failed, fallback plainto: %s", exc)
+            lexical_rows = (
                 self.db.execute(
                     text(
                         """
@@ -176,24 +215,23 @@ class HybridRetriever:
                 .mappings()
                 .all()
             )
-
-        t_ret = time.perf_counter()
-        # Same Session isn't fully thread-safe — run sequential but lean queries.
-        # Parallelize only if two sessions; keep simple + fast with small LIMITs.
-        dense_hits = dense_search()
-        dense_ms = (time.perf_counter() - t_ret) * 1000 + embed_ms
-
-        t_lex = time.perf_counter()
-        lexical_rows = lexical_search()
         lexical_ms = (time.perf_counter() - t_lex) * 1000
 
-        merged: dict[int, RetrievedChunk] = {h.chunk_id: h for h in dense_hits}
-        for row in lexical_rows:
-            if row["id"] in merged:
-                merged[row["id"]].lexical_score = float(row["score"] or 0)
+        # Reciprocal Rank Fusion — fair merge of dense + lexical ranks
+        by_id: dict[int, RetrievedChunk] = {}
+        rrf: dict[int, float] = {}
+
+        for rank, h in enumerate(dense_hits):
+            by_id[h.chunk_id] = h
+            rrf[h.chunk_id] = rrf.get(h.chunk_id, 0.0) + _rrf_score(rank)
+
+        for rank, row in enumerate(lexical_rows):
+            cid = row["id"]
+            if cid in by_id:
+                by_id[cid].lexical_score = float(row["score"] or 0)
             else:
-                merged[row["id"]] = RetrievedChunk(
-                    chunk_id=row["id"],
+                by_id[cid] = RetrievedChunk(
+                    chunk_id=cid,
                     document_id=row["document_id"],
                     document_title=row["title"],
                     document_url=row["url"],
@@ -202,45 +240,58 @@ class HybridRetriever:
                     section=row["section"],
                     lexical_score=float(row["score"] or 0),
                 )
+            rrf[cid] = rrf.get(cid, 0.0) + _rrf_score(rank)
 
-        candidates = list(merged.values())
-        if not candidates:
+        if not by_id:
             self._log(query, language, dense_ms, lexical_ms, 0, time.perf_counter() - t0, 0)
             return []
 
-        # Cap candidates before rerank (hybrid can grow); keep best by dense/lex
+        # Prefer RRF ordering into the rerank candidate pool
+        ordered_ids = sorted(rrf.keys(), key=lambda i: rrf[i], reverse=True)
+        candidates = [by_id[i] for i in ordered_ids]
         if len(candidates) > settings.rerank_candidates:
-            candidates.sort(
-                key=lambda c: max(c.dense_score or 0, (c.lexical_score or 0) * 2),
-                reverse=True,
-            )
             candidates = candidates[: settings.rerank_candidates]
 
         t_rr = time.perf_counter()
-        passages = [(c.content or "")[:_RERANK_CHARS] for c in candidates]
-        ranked = self.reranker.rerank(query, passages, top_k=k)
+        # Title + body so cross-encoder can reject off-topic construction news
+        passages = [
+            f"{(c.document_title or '').strip()}\n{(c.content or '')[:_RERANK_CHARS]}"
+            for c in candidates
+        ]
+        ranked = self.reranker.rerank(query, passages, top_k=max(k * 2, k))
         rerank_ms = (time.perf_counter() - t_rr) * 1000
 
         results: list[RetrievedChunk] = []
+        best_rr = 0.0
         for idx, score in ranked:
+            s = float(score)
+            best_rr = max(best_rr, s)
             item = candidates[idx]
-            item.rerank_score = float(score)
+            item.rerank_score = s
             results.append(item)
+
+        # Keep only hits that are competitive with the best cross-encoder score
+        floor = max(_MIN_RERANK_KEEP, best_rr * 0.45) if results else _MIN_RERANK_KEEP
+        filtered = [r for r in results if float(r.rerank_score or 0) >= floor]
+        # Always keep at least the top-1 if anything ranked
+        if not filtered and results:
+            filtered = results[:1]
+        results = filtered[:k]
 
         total_ms = (time.perf_counter() - t0) * 1000
         self._log(query, language, dense_ms, lexical_ms, rerank_ms, total_ms / 1000, len(results))
         logger.info(
-            "search embed+dense=%.0fms lex=%.0fms rerank=%.0fms total=%.0fms hits=%d cand=%d",
+            "search embed+dense=%.0fms lex=%.0fms rerank=%.0fms total=%.0fms hits=%d cand=%d best_rr=%.3f",
             dense_ms,
             lexical_ms,
             rerank_ms,
             total_ms,
             len(results),
             len(candidates),
+            best_rr,
         )
         _QUERY_CACHE[cache_key] = (time.perf_counter(), results)
         if len(_QUERY_CACHE) > _QUERY_CACHE_MAX:
-            # drop oldest
             oldest = sorted(_QUERY_CACHE.items(), key=lambda x: x[1][0])[:16]
             for key, _ in oldest:
                 _QUERY_CACHE.pop(key, None)

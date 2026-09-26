@@ -47,14 +47,14 @@ export default function LoginClient() {
   return (
     <main className="auth-shell">
       <div className="auth-card">
-        <div className="brand-mark">CIVICAI</div>
+        <div className="brand-mark">CivicAI</div>
         <h1 className="brand-lg">
-          {mode === "login" ? "Autentificare" : "Cont nou"}
+          {mode === "login" ? "Bine ai venit" : "Cont nou"}
         </h1>
         <p className="lede">
           {lang === "ro"
-            ? "Asistentul Primăriei Chișinău — răspunsuri clare din documente oficiale."
-            : "Ассистент примэрии Кишинёва — ответы из официальных документов."}
+            ? "Răspunsuri clare din documentele Primăriei Chișinău — ca de la un coleg care cunoaște dosarul."
+            : "Понятные ответы из документов примэрии Кишинёва — как от коллеги, который знает дело."}
         </p>
         <div className="auth-tabs">
           <button

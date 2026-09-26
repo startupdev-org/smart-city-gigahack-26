@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
+from backend.ai.device import pick_torch_device
 from backend.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -14,26 +15,30 @@ class RerankerService:
     def __init__(self, model_name: str | None = None) -> None:
         self.model_name = model_name or get_settings().reranker_model
         self._ranker = None
+        self._device: str | None = None
 
     def _load(self):
         if self._ranker is None:
             from FlagEmbedding import FlagReranker
 
-            use_fp16 = False
-            try:
-                import torch
-
-                use_fp16 = bool(torch.cuda.is_available())
-            except Exception:  # noqa: BLE001
-                use_fp16 = False
+            self._device = pick_torch_device()
+            use_fp16 = self._device == "cuda"
+            devices = "cuda:0" if self._device == "cuda" else "cpu"
+            max_len = 256 if self._device == "cuda" else 128
+            batch = 64 if self._device == "cuda" else 16
             logger.info(
-                "Loading reranker %s (fp16=%s) …", self.model_name, use_fp16
+                "Loading reranker %s (fp16=%s device=%s max_length=%s) …",
+                self.model_name,
+                use_fp16,
+                devices,
+                max_len,
             )
-            # shorter max_length ≈ much faster on CPU / 8GB GPU
             self._ranker = FlagReranker(
                 self.model_name,
                 use_fp16=use_fp16,
-                max_length=128,
+                max_length=max_len,
+                devices=devices,
+                batch_size=batch,
             )
         return self._ranker
 

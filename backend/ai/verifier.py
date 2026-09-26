@@ -247,19 +247,29 @@ def verify_evidence(
         rr = float(c.rerank_score or 0.0)
         ds = float(c.dense_score or 0.0)
         lx = float(getattr(c, "lexical_score", 0) or 0.0)
+        has_rr = c.rerank_score is not None
+
+        # Cross-encoder is the main gate when present — refuse weak semantic matches
+        if has_rr and rr < 0.18 and content_ov < 0.22:
+            continue
 
         admits = (
-            content_ov >= (0.16 if rich_q else min_overlap)
-            or (rr >= min_rerank and content_ov >= 0.08)
-            or (ds >= min_dense and content_ov >= 0.10)
-            or (title_ov >= 0.45 and content_ov >= 0.10 and title_len > 20)
-            or (job_q and open_call and (content_ov >= 0.08 or lx >= 0.75))
-            or (list_mode and open_call and lx >= 0.9)
+            (has_rr and rr >= max(min_rerank, 0.28) and content_ov >= 0.05)
+            or content_ov >= (0.18 if rich_q else min_overlap)
+            or (not has_rr and ds >= min_dense and content_ov >= 0.12)
+            or (title_ov >= 0.45 and content_ov >= 0.12 and title_len > 20)
+            or (job_q and open_call and (content_ov >= 0.08 or lx >= 0.75 or rr >= 0.25))
+            or (list_mode and open_call and (lx >= 0.9 or rr >= 0.3))
         )
         if not admits:
             continue
 
-        score = content_ov * 1.35 + max(rr, ds * 0.5) * 0.55 + title_ov * 0.2
+        score = (
+            (rr * 1.6 if has_rr else 0.0)
+            + content_ov * 1.1
+            + (ds or 0) * 0.25
+            + title_ov * 0.15
+        )
         if title_ov >= 0.45 and title_len > 24:
             score += 0.15
         if job_q:
@@ -286,7 +296,13 @@ def verify_evidence(
 
     scored.sort(key=lambda x: x[0], reverse=True)
     best = scored[0][0]
-    if best < 0.16:
+    if best < 0.18:
+        return "missing", []
+
+    best_rr = max((float(c.rerank_score or 0) for _, c in scored), default=0.0)
+    best_cov = max(_content_overlap(question, c.content or "") for _, c in scored)
+    # Semantically weak pool → missing (don't feed construction-news as permits)
+    if best_rr > 0 and best_rr < 0.22 and best_cov < 0.16 and not list_mode:
         return "missing", []
 
     if list_mode or answer_mode in ("list", "howto"):
