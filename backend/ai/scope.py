@@ -6,12 +6,14 @@ from typing import Any, Callable
 
 from backend.ai.analyze import (
     identity_reply,
+    is_job_question,
     looks_clearly_offtopic,
     looks_explicitly_municipal,
     looks_identity_question,
     looks_plausibly_municipal,
     offtopic_reply,
 )
+from backend.ai.current_jobs import sector_in_question
 
 TopicClassifier = Callable[[str], dict[str, Any]]
 
@@ -50,6 +52,15 @@ def classify_scope(
             "summary": "Instituție și serviciu municipal identificate",
             "relevant": True,
             "reason": "named_authority_and_service",
+            "source": "heuristic",
+            "reply": None,
+            "kind": "municipal",
+        }
+    if is_job_question(question) and sector_in_question(question):
+        return {
+            "summary": "Posturi și sector municipal identificate",
+            "relevant": True,
+            "reason": "sector_job_question",
             "source": "heuristic",
             "reply": None,
             "kind": "municipal",

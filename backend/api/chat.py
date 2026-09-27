@@ -12,6 +12,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.ai.answer_status import answer_claims_missing
+from backend.ai.analyze import is_job_question, offtopic_reply, wants_current
+from backend.ai.current_jobs import job_evidence_excerpt, sector_in_question
+from backend.ai.followups import contextualize_question
 from backend.ai.llm import get_llm_service
 from backend.ai.retrieval import HybridRetriever, RetrievedChunk
 from backend.ai.verifier import (
@@ -19,7 +22,6 @@ from backend.ai.verifier import (
     question_about_deadline,
     verify_evidence,
 )
-from backend.ai.analyze import offtopic_reply
 from backend.api.auth import User, require_approved
 from backend.db.database import get_db
 from backend.db.models import TopicLink
@@ -87,7 +89,18 @@ def _is_ru(q: str) -> bool:
     return any("\u0400" <= c <= "\u04FF" for c in q)
 
 
-def _missing_answer(lang: str) -> str:
+def _missing_answer(lang: str, question: str = "") -> str:
+    if is_job_question(question) and wants_current(question):
+        sector = sector_in_question(question)
+        where = f" în sectorul {sector.capitalize()}" if sector else ""
+        if lang == "ru":
+            return "В доступных документах не удалось подтвердить конкурс с ещё открытым сроком подачи заявок."
+        if lang == "en":
+            return "I could not verify a job announcement with an application deadline still open in the indexed documents."
+        return (
+            f"Nu am putut verifica în documentele indexate concursuri{where} "
+            "cu termen de depunere încă deschis."
+        )
     if lang == "ru":
         return (
             "Информация не найдена в муниципальном корпусе. "
@@ -104,7 +117,7 @@ def _missing_answer(lang: str) -> str:
     )
 
 
-def _evidence_blocks(chunks: list[RetrievedChunk]) -> list[str]:
+def _evidence_blocks(chunks: list[RetrievedChunk], *, question: str = "") -> list[str]:
     from backend.crawler.html_parser import scrub_indexed_text
 
     blocks = []
@@ -117,6 +130,8 @@ def _evidence_blocks(chunks: list[RetrievedChunk]) -> list[str]:
         )
         text = scrub_indexed_text(text)
         text = re.sub(r"\s{2,}", " ", text).strip()
+        if is_job_question(question):
+            text = job_evidence_excerpt(text)
         if len(text) < 40:
             # fall back to title so we still have a topical hook
             text = (c.document_title or "").strip()
@@ -299,6 +314,24 @@ def _persist_turn(
     return sid
 
 
+def _question_for_search(db: Session, user: User, body: ChatRequest) -> str:
+    """Read one prior user turn only from a session owned by this user."""
+    if not body.session_id:
+        return body.question
+    from backend.api.chats import ChatMessage, ChatSession
+
+    session = db.get(ChatSession, body.session_id)
+    if session is None or session.user_id != user.id:
+        return body.question
+    previous = (
+        db.query(ChatMessage)
+        .filter_by(session_id=session.id, role="user")
+        .order_by(ChatMessage.id.desc())
+        .first()
+    )
+    return contextualize_question(body.question, previous.content if previous else None)
+
+
 @router.post("/chat", response_model=ChatResponse)
 def chat(
     body: ChatRequest,
@@ -306,7 +339,10 @@ def chat(
     user: User = Depends(require_approved),
 ) -> ChatResponse:
     try:
-        result = _build_response(body=body, db=db)
+        search_body = body.model_copy(
+            update={"question": _question_for_search(db, user, body)}
+        )
+        result = _build_response(body=search_body, db=db)
         sid = _persist_turn(db, user, body.session_id, body.question, result)
         result.session_id = sid
         return result
@@ -355,7 +391,7 @@ def _build_response(*, body: ChatRequest, db: Session) -> ChatResponse:
     if gate == "missing":
         return ChatResponse(
             status="missing",
-            answer=_missing_answer(lang),
+            answer=_missing_answer(lang, body.question),
             sources=[],
             next_action=None,
             confidence="low",
@@ -370,7 +406,7 @@ def _build_response(*, body: ChatRequest, db: Session) -> ChatResponse:
     ]
     raw = get_llm_service().generate_structured(
         body.question,
-        _evidence_blocks(usable),
+        _evidence_blocks(usable, question=body.question),
         link_lines,
     )
     answer = raw.get("answer") or ""
@@ -383,7 +419,7 @@ def _build_response(*, body: ChatRequest, db: Session) -> ChatResponse:
     # LLM may say missing — trust if evidence weak
     if raw.get("status") == "missing":
         status_val = "missing"
-        answer = _missing_answer(lang)
+        answer = _missing_answer(lang, body.question)
         refs = []
 
     if gate == "conflict" and question_about_deadline(body.question):
@@ -403,7 +439,7 @@ def _build_response(*, body: ChatRequest, db: Session) -> ChatResponse:
         or status_val == "missing"
     ):
         status_val = "missing"
-        answer = _missing_answer(lang)
+        answer = _missing_answer(lang, body.question)
         refs = []
 
     if status_val == "missing":
@@ -446,12 +482,13 @@ def chat_stream(
 
         t0 = _time.perf_counter()
         try:
-            lang = "ru" if _is_ru(body.question) else "ro"
+            search_question = _question_for_search(db, user, body)
+            lang = "ru" if _is_ru(search_question) else "ro"
 
             state: AgentState | None = None
             for item in run_agent_pipeline(
                 db,
-                body.question,
+                search_question,
                 top_k=body.top_k,
                 ui_language=body.ui_language,
             ):
@@ -514,7 +551,7 @@ def chat_stream(
                 answer = (
                     state.contact_answer
                     if (state.scope_rejected and state.contact_answer)
-                    else _missing_answer(lang)
+                    else _missing_answer(lang, search_question)
                 )
                 result = {
                     "status": "missing",
@@ -661,7 +698,7 @@ def chat_stream(
                 },
             )
 
-            evidence = _evidence_blocks(usable)
+            evidence = _evidence_blocks(usable, question=search_question)
             if state.fetched:
                 for i, f in enumerate(state.fetched, 1):
                     evidence.append(
@@ -682,7 +719,7 @@ def chat_stream(
             answer_parts: list[str] = []
             t_gen = _time.perf_counter()
             for token in get_llm_service().stream_answer(
-                body.question,
+                search_question,
                 evidence,
                 language_meta=state.language_meta
                 or {
@@ -720,14 +757,14 @@ def chat_stream(
                     )
             if is_generic_assistant_blurb(answer):
                 status_val = "missing"
-                answer = _missing_answer(lang)
+                answer = _missing_answer(lang, search_question)
                 refs = []
             # Model denied corpus coverage → treat as missing, no anexas / CTA
             if status_val != "conflict" and (
                 status_val == "missing" or answer_claims_missing(answer)
             ):
                 status_val = "missing"
-                answer = _missing_answer(lang)
+                answer = _missing_answer(lang, search_question)
                 refs = []
                 usable = []
                 na = None
@@ -735,7 +772,7 @@ def chat_stream(
                 state.confidence_score = 0.2
 
             sources_models = _ground_sources(
-                usable, refs, status=status_val, question=body.question
+                usable, refs, status=status_val, question=search_question
             )
             # enrich types from state.source_meta
             type_by_url = {

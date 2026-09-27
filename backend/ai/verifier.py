@@ -11,6 +11,7 @@ from backend.ai.analyze import (
     wants_current as analyze_wants_current,
     wants_list as analyze_wants_list,
 )
+from backend.ai.current_jobs import current_job_state, job_hit_matches_sector, sector_in_question
 from backend.ai.retrieval import RetrievedChunk
 
 _DAY_RE = re.compile(
@@ -80,8 +81,8 @@ def _token_overlap(question: str, text: str) -> float:
 
 _YEAR_RE = re.compile(r"(?:/|[^0-9])(20\d{2})(?:/|[^0-9])")
 _CURRENTISH_Q = re.compile(
-    r"\b(acum|current|now|deschis|открыт|vacant[ăaе]?|конкурс|funcți[ei].*vacant|"
-    r"angajar|job|astăzi|astazi|2026|aplic|aplica)\b",
+    r"\b(acum|current|now|deschis|открыт|сейчас|vacant[ăaе]?|funcți[ei].*vacant|"
+    r"angajar|job|astăzi|astazi|aplic|aplica)\b",
     re.IGNORECASE,
 )
 
@@ -158,9 +159,10 @@ def verify_evidence(
     try:
         from backend.ai.prompts import CHISINAU_TZ
 
-        year_now = datetime.now(CHISINAU_TZ).year
+        today = datetime.now(CHISINAU_TZ).date()
     except Exception:  # noqa: BLE001
-        year_now = datetime.now().year
+        today = datetime.now().date()
+    year_now = today.year
 
     wants_current = bool(_CURRENTISH_Q.search(question or "")) or analyze_wants_current(
         question
@@ -171,11 +173,16 @@ def verify_evidence(
         else (analyze_wants_list(question) or answer_mode == "list")
     )
     job_q = is_job_question(question)
+    target_sector = sector_in_question(question) if job_q else None
     q_toks = analyze_tokens(question)
     rich_q = len(q_toks) >= 2
 
     scored: list[tuple[float, RetrievedChunk]] = []
     for c in chunks:
+        if job_q and not job_hit_matches_sector(c, target_sector):
+            continue
+        if job_q and wants_current and current_job_state(c, today=today) != "open":
+            continue
         if _is_junk_chunk(c):
             continue
         body = (c.content or "").lower()

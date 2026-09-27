@@ -133,17 +133,18 @@ _LIST_RE = re.compile(
 _CURRENT_RE = re.compile(
     r"\b("
     r"acum|current|now|deschis|deschise|открыт|ast[aă]zi|astazi|"
-    r"2026|în\s+prezent|in\s+prezent|disponibil|active|ongoing|"
-    r"vacant[aăe]?|конкурс|aplic|aplica|angajar"
+    r"în\s+prezent|in\s+prezent|disponibil|active|ongoing|"
+    r"vacant[aăe]?|сейчас|текущ|актуаль|aplic|aplica|angajar"
     r")\b",
     re.I,
 )
 
 _JOB_RE = re.compile(
     r"(?:"
-    r"concurs|vacant|angajar|ваканс|job\s*opening|posturi?\s+vacant|"
-    r"func[tț](?:ii|ia|ie|iei)?\s+public|"
-    r"funct(?:ii|ia|ie|iei)?\s+public|"
+    r"concurs|vacant|angajar|ваканс|конкурс|job\s*opening|posturi?\s+vacant|"
+    r"func[tț](?:ii|ia|ie|iei)?\s+(?:public|deschis|vacant)|"
+    r"funct(?:ii|ia|ie|iei)?\s+(?:public|deschis|vacant)|"
+    r"posturi?\s+(?:deschis|vacant)|"
     r"ocuparea\s+func|locuri\s+de\s+munc[aă]|"
     r"\baplic[aă]|\baplica\b|candidat(?:ur[aă])?"
     r")",
