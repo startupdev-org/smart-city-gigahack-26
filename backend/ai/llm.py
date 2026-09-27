@@ -181,33 +181,40 @@ class LLMService:
         return data
 
     def classify_topic_relevance(self, question: str) -> dict[str, Any]:
-        """Cheap first-pass: is this a Chișinău municipal question worth RAG?"""
+        """Classify whether municipal documents could answer the question."""
         user = (
-            "You are a STRICT gatekeeper for CivicAI (Chișinău City Hall assistant).\n"
-            "relevant=true ONLY if the question is about municipal / public-administration "
-            "topics for Chișinău: permits, contacts, preturi, public jobs/concursuri, taxes, "
-            "urbanism, city services, official announcements, municipal schools/kindergartens.\n"
-            "relevant=false for ALL of: who are you / ce ești tu / greetings, jokes, recipes, "
-            "coding, general trivia, other cities, personal advice, chat memory, AI identity.\n"
+            "You classify questions for CivicAI, an assistant over Chișinău municipal documents.\n"
+            "relevant=true when official city documents could plausibly answer the question: "
+            "permits, required papers, where to apply, city services, taxes, contacts, "
+            "public jobs, schools, or construction procedures. The user need not say "
+            "Chișinău, city hall, or the word permit explicitly.\n"
+            "Examples relevant=true: 'What do I need to build a new house?', "
+            "'Which papers are needed before construction?', "
+            "'Какие документы нужны, чтобы построить дом?'\n"
+            "relevant=false for questions about construction technique or materials, "
+            "recipes, jokes, coding, general trivia, other cities, personal advice, "
+            "chat memory, or the assistant's identity.\n"
+            "Examples relevant=false: 'How do I pour a foundation?', "
+            "'What bricks should I buy?', 'What is the weather in Chișinău?'\n"
             'Return ONLY JSON: {"relevant": true|false, "reason": "short"}\n\n'
             f"Question: {question}"
         )
         try:
             content = self._chat_once(
-                system=(
-                    "JSON only. Default to relevant=false unless clearly Chișinău municipal."
-                ),
+                system="JSON only. Judge the meaning, not keyword presence. Be cautious with ambiguous questions.",
                 user=user,
                 max_tokens=80,
             )
             data = _extract_json(content)
-            relevant = bool(data.get("relevant"))
+            relevant = data.get("relevant")
+            if not isinstance(relevant, bool):
+                raise ValueError("Topic classifier must return a JSON boolean")
             reason = str(data.get("reason") or "")[:160]
             return {"relevant": relevant, "reason": reason, "source": "llm"}
         except Exception as exc:  # noqa: BLE001
             logger.warning("classify_topic_relevance failed: %s", exc)
             return {
-                "relevant": False,
+                "relevant": None,
                 "reason": "classifier_error",
                 "source": "fallback",
                 "error": str(exc)[:120],

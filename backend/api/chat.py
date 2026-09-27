@@ -11,15 +11,15 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from backend.ai.answer_status import answer_claims_missing
 from backend.ai.llm import get_llm_service
 from backend.ai.retrieval import HybridRetriever, RetrievedChunk
 from backend.ai.verifier import (
     is_generic_assistant_blurb,
-    is_offtopic_question,
     question_about_deadline,
     verify_evidence,
 )
-from backend.ai.analyze import identity_reply, looks_identity_question, offtopic_reply
+from backend.ai.analyze import offtopic_reply
 from backend.api.auth import User, require_approved
 from backend.db.database import get_db
 from backend.db.models import TopicLink
@@ -102,37 +102,6 @@ def _missing_answer(lang: str) -> str:
         "Informația nu a fost identificată în corpusul municipal disponibil. "
         "Nu inventăm răspunsuri și nu atașăm surse nerelevante."
     )
-
-
-_MISSING_CLAIM_RE = re.compile(
-    r"(?:"
-    r"^\s*missing\s*$|"
-    r"^\s*lips[aă]\s*$|"
-    r"nu\s+(?:a\s+fost\s+)?(?:identificat[ăa]|g[ăa]sit[ăa]|disponibil[ăa])|"
-    r"nu\s+(?:exist[ăa]|am\s+g[ăa]sit)|"
-    r"informa[țt]ia\s+nu\s+(?:a\s+fost|este)|"
-    r"not\s+found\s+in\s+(?:the\s+)?(?:available\s+)?(?:municipal\s+)?corpus|"
-    r"no\s+(?:current|matching|relevant)\s+(?:information|announcement)|"
-    r"информаци[яи]\s+не\s+найден|"
-    r"\bstatus\s*[:=]\s*missing\b"
-    r")",
-    re.I,
-)
-
-
-def _answer_claims_missing(answer: str) -> bool:
-    """True when the model narrates a corpus miss (incl. bare 'missing')."""
-    a = (answer or "").strip()
-    if not a:
-        return True
-    if re.fullmatch(r"missing|lips[aă]|не\s+найдено|not\s+found\.?", a, re.I):
-        return True
-    if re.search(r"\[\d+\]", a):
-        return False
-    # Short denial without citations
-    if len(a) < 80 and _MISSING_CLAIM_RE.search(a):
-        return True
-    return bool(_MISSING_CLAIM_RE.search(a)) and len(a) < 280
 
 
 def _evidence_blocks(chunks: list[RetrievedChunk]) -> list[str]:
@@ -356,29 +325,22 @@ def _build_response(*, body: ChatRequest, db: Session) -> ChatResponse:
     lang = "ru" if _is_ru(body.question) else "ro"
     links = db.query(TopicLink).all()
 
-    if is_offtopic_question(body.question):
-        from backend.ai.language import resolve_answer_language
+    from backend.ai.analyze import analyze_question_meta
+    from backend.ai.scope import classify_scope
 
-        lang_meta = resolve_answer_language(body.question, body.ui_language)
-        lang = lang_meta["answer_language"]
-        answer = (
-            identity_reply(lang)
-            if looks_identity_question(body.question)
-            else offtopic_reply(lang)
-        )
+    meta = analyze_question_meta(body.question, ui_language=body.ui_language)
+    lang = meta["language"]
+    scope = classify_scope(body.question, language=lang)
+    if not scope["relevant"]:
         return ChatResponse(
             status="missing",
-            answer=answer,
+            answer=scope["reply"] or offtopic_reply(lang),
             sources=[],
             next_action=None,
             confidence="high",
             confidence_score=0.9,
             language=lang,
         )
-
-    from backend.ai.analyze import analyze_question_meta
-
-    meta = analyze_question_meta(body.question, ui_language=body.ui_language)
     retriever = HybridRetriever(db)
     hits = retriever.search(body.question, top_k=body.top_k)
     gate, usable = verify_evidence(
@@ -395,8 +357,9 @@ def _build_response(*, body: ChatRequest, db: Session) -> ChatResponse:
             status="missing",
             answer=_missing_answer(lang),
             sources=[],
-            next_action=_pick_next_action(body.question, links, evidence_urls),
-            confidence="high",
+            next_action=None,
+            confidence="low",
+            confidence_score=0.2,
             language=lang,
             evidence_preview=[],
         )
@@ -434,11 +397,26 @@ def _build_response(*, body: ChatRequest, db: Session) -> ChatResponse:
     elif gate == "conflict":
         status_val = "supported"
 
-    if is_generic_assistant_blurb(answer) or status_val == "missing":
+    if (
+        is_generic_assistant_blurb(answer)
+        or answer_claims_missing(answer)
+        or status_val == "missing"
+    ):
         status_val = "missing"
         answer = _missing_answer(lang)
         refs = []
 
+    if status_val == "missing":
+        return ChatResponse(
+            status="missing",
+            answer=answer,
+            sources=[],
+            next_action=None,
+            confidence="low",
+            confidence_score=0.2,
+            language=raw.get("language") or lang,
+            evidence_preview=[],
+        )
     sources = _ground_sources(
         usable, refs, status=status_val, question=body.question
     )
@@ -469,47 +447,6 @@ def chat_stream(
         t0 = _time.perf_counter()
         try:
             lang = "ru" if _is_ru(body.question) else "ro"
-
-            if is_offtopic_question(body.question):
-                from backend.ai.language import resolve_answer_language
-
-                lang_meta = resolve_answer_language(body.question, body.ui_language)
-                lang = lang_meta["answer_language"]
-                answer = (
-                    identity_reply(lang)
-                    if looks_identity_question(body.question)
-                    else offtopic_reply(lang)
-                )
-                result = {
-                    "status": "missing",
-                    "answer": answer,
-                    "sources": [],
-                    "next_action": None,
-                    "confidence": "high",
-                    "confidence_score": 0.9,
-                    "language": lang,
-                    "evidence_preview": [],
-                    "conflicts": [],
-                    "tools_used": ["analyze_question", "scope_gate"],
-                    "latency_ms": int((_time.perf_counter() - t0) * 1000),
-                    "session_id": None,
-                }
-                if user:
-                    cr = ChatResponse(
-                        status="missing",
-                        answer=result["answer"],
-                        sources=[],
-                        confidence="high",
-                        confidence_score=0.9,
-                        language=lang,
-                        tools_used=["analyze_question"],
-                    )
-                    result["session_id"] = _persist_turn(
-                        db, user, body.session_id, body.question, cr
-                    )
-                yield _sse("result", result)
-                yield _sse("done", {})
-                return
 
             state: AgentState | None = None
             for item in run_agent_pipeline(
@@ -787,7 +724,7 @@ def chat_stream(
                 refs = []
             # Model denied corpus coverage → treat as missing, no anexas / CTA
             if status_val != "conflict" and (
-                status_val == "missing" or _answer_claims_missing(answer)
+                status_val == "missing" or answer_claims_missing(answer)
             ):
                 status_val = "missing"
                 answer = _missing_answer(lang)

@@ -52,11 +52,8 @@ def is_offtopic_question(question: str) -> bool:
     from backend.ai.analyze import (
         looks_clearly_offtopic,
         looks_identity_question,
-        looks_municipal,
     )
 
-    if looks_municipal(question):
-        return False
     return (
         bool(_OFFTOPIC_RE.search(question or ""))
         or looks_identity_question(question)
