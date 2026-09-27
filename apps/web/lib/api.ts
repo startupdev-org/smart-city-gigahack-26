@@ -31,9 +31,11 @@ export type ChatResponse = {
   evidence_preview?: ChatResponse["sources"];
   session_id?: number | null;
   conflicts?: {
+    field?: string;
     left: {
       document: string;
       days: number[];
+      value?: string;
       quote: string;
       url?: string | null;
       page?: string | null;
@@ -41,6 +43,7 @@ export type ChatResponse = {
     right: {
       document: string;
       days: number[];
+      value?: string;
       quote: string;
       url?: string | null;
       page?: string | null;

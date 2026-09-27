@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from collections import defaultdict
 
 from backend.ai.analyze import (
     fold,
@@ -11,15 +10,12 @@ from backend.ai.analyze import (
     wants_current as analyze_wants_current,
     wants_list as analyze_wants_list,
 )
+from backend.ai.current_jobs import current_job_state, job_hit_matches_sector, sector_in_question
+from backend.ai.conflicts import detect_document_conflicts
 from backend.ai.retrieval import RetrievedChunk
 
-_DAY_RE = re.compile(
-    r"(\d{1,3})\s*(?:de\s+)?(?:zile|дней|дня|zi|день)\s*(?:lucrătoare|рабочих|calendaristice|календарных)?",
-    re.IGNORECASE,
-)
-
 _TERM_Q_RE = re.compile(
-    r"\b(termen|deadline|срочн|срок|cât\s+durează|cat\s+dureaza|zile\s+lucr|"
+    r"\b(termen\w*|deadline|срочн|срок|cât\s+durează|cat\s+dureaza|zile\s+lucr|"
     r"în\s+cât\s+timp|in\s+cat\s+timp)\b",
     re.IGNORECASE,
 )
@@ -52,11 +48,8 @@ def is_offtopic_question(question: str) -> bool:
     from backend.ai.analyze import (
         looks_clearly_offtopic,
         looks_identity_question,
-        looks_municipal,
     )
 
-    if looks_municipal(question):
-        return False
     return (
         bool(_OFFTOPIC_RE.search(question or ""))
         or looks_identity_question(question)
@@ -72,10 +65,6 @@ def is_generic_assistant_blurb(answer: str) -> bool:
     return bool(_GENERIC_ASSISTANT_RE.search(answer or ""))
 
 
-def _deadline_mentions(text: str) -> set[int]:
-    return {int(m.group(1)) for m in _DAY_RE.finditer(text or "")}
-
-
 def _token_overlap(question: str, text: str) -> float:
     """Backward-compatible wrapper — diacritic-tolerant."""
     return overlap_score(question, text)
@@ -83,8 +72,8 @@ def _token_overlap(question: str, text: str) -> float:
 
 _YEAR_RE = re.compile(r"(?:/|[^0-9])(20\d{2})(?:/|[^0-9])")
 _CURRENTISH_Q = re.compile(
-    r"\b(acum|current|now|deschis|открыт|vacant[ăaе]?|конкурс|funcți[ei].*vacant|"
-    r"angajar|job|astăzi|astazi|2026|aplic|aplica)\b",
+    r"\b(acum|current|now|deschis|открыт|сейчас|vacant[ăaе]?|funcți[ei].*vacant|"
+    r"angajar|job|astăzi|astazi|aplic|aplica)\b",
     re.IGNORECASE,
 )
 
@@ -161,9 +150,10 @@ def verify_evidence(
     try:
         from backend.ai.prompts import CHISINAU_TZ
 
-        year_now = datetime.now(CHISINAU_TZ).year
+        today = datetime.now(CHISINAU_TZ).date()
     except Exception:  # noqa: BLE001
-        year_now = datetime.now().year
+        today = datetime.now().date()
+    year_now = today.year
 
     wants_current = bool(_CURRENTISH_Q.search(question or "")) or analyze_wants_current(
         question
@@ -174,11 +164,16 @@ def verify_evidence(
         else (analyze_wants_list(question) or answer_mode == "list")
     )
     job_q = is_job_question(question)
+    target_sector = sector_in_question(question) if job_q else None
     q_toks = analyze_tokens(question)
     rich_q = len(q_toks) >= 2
 
     scored: list[tuple[float, RetrievedChunk]] = []
     for c in chunks:
+        if job_q and not job_hit_matches_sector(c, target_sector):
+            continue
+        if job_q and wants_current and current_job_state(c, today=today) != "open":
+            continue
         if _is_junk_chunk(c):
             continue
         body = (c.content or "").lower()
@@ -344,15 +339,7 @@ def verify_evidence(
             else:
                 return "missing", []
 
-    if question_about_deadline(question):
-        by_doc: dict[int, set[int]] = defaultdict(set)
-        for c in usable:
-            days = _deadline_mentions(c.content)
-            if days:
-                by_doc[c.document_id].update(days)
-        if len(by_doc) >= 2:
-            sets = list(by_doc.values())
-            if len({frozenset(s) for s in sets}) >= 2:
-                return "conflict", usable
+    if detect_document_conflicts(usable, question):
+        return "conflict", usable
 
     return "supported", usable

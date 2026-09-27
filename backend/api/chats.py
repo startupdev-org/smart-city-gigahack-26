@@ -40,6 +40,7 @@ class ChatMessage(Base):
     content: Mapped[str] = mapped_column(Text)
     status: Mapped[Optional[str]] = mapped_column(String(32))
     sources_json: Mapped[Optional[str]] = mapped_column(Text)
+    conflicts_json: Mapped[Optional[str]] = mapped_column(Text)
     next_action_json: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -58,6 +59,7 @@ class MessageOut(BaseModel):
     content: str
     status: str | None = None
     sources: list | None = None
+    conflicts: list | None = None
     next_action: dict | None = None
     created_at: str | None = None
 
@@ -92,6 +94,7 @@ def add_message(
     *,
     status: str | None = None,
     sources: list | None = None,
+    conflicts: list | None = None,
     next_action: dict | None = None,
 ) -> None:
     db.add(
@@ -101,6 +104,7 @@ def add_message(
             content=content,
             status=status,
             sources_json=json.dumps(sources, ensure_ascii=False) if sources else None,
+            conflicts_json=json.dumps(conflicts, ensure_ascii=False) if conflicts else None,
             next_action_json=(
                 json.dumps(next_action, ensure_ascii=False) if next_action else None
             ),
@@ -175,6 +179,7 @@ def get_messages(
                 content=r.content,
                 status=r.status,
                 sources=json.loads(r.sources_json) if r.sources_json else None,
+                conflicts=json.loads(r.conflicts_json) if r.conflicts_json else None,
                 next_action=json.loads(r.next_action_json) if r.next_action_json else None,
                 created_at=r.created_at.isoformat() if r.created_at else None,
             )

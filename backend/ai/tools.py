@@ -16,18 +16,21 @@ from sqlalchemy.orm import Session
 from backend.ai.analyze import (
     analyze_question_meta,
     fold,
-    identity_reply,
-    looks_clearly_offtopic,
-    looks_identity_question,
-    looks_municipal,
     offtopic_reply,
     topic_terms as extract_topic_terms,
 )
+from backend.ai.current_jobs import (
+    application_deadlines,
+    current_job_state,
+    job_hit_matches_sector,
+    sector_in_question,
+)
+from backend.ai.conflicts import detect_document_conflicts
 from backend.ai.prompts import CHISINAU_TZ
 from backend.ai.retrieval import HybridRetriever, RetrievedChunk
+from backend.ai.scope import classify_scope as tool_scope_gate
 from backend.ai.verifier import (
     _chunk_year,
-    _deadline_mentions,
     _token_overlap,
     question_about_deadline,
     verify_evidence,
@@ -316,78 +319,6 @@ def tool_analyze_question(
     }
 
 
-def tool_scope_gate(question: str, *, language: str = "ro") -> dict[str, Any]:
-    """First-pass: reject chit-chat / identity / off-topic before any corpus search."""
-    # Identity about the assistant → fixed intro, no RAG
-    if looks_identity_question(question) and not looks_municipal(question):
-        return {
-            "summary": "Identitate asistent (fără căutare)",
-            "relevant": False,
-            "reason": "identity",
-            "source": "heuristic",
-            "reply": identity_reply(language),
-            "kind": "identity",
-        }
-    if looks_clearly_offtopic(question) and not looks_municipal(question):
-        return {
-            "summary": "În afara temei (heuristic)",
-            "relevant": False,
-            "reason": "clear_offtopic",
-            "source": "heuristic",
-            "reply": offtopic_reply(language),
-            "kind": "offtopic",
-        }
-    if looks_municipal(question):
-        return {
-            "summary": "Pe temă municipală (heuristic)",
-            "relevant": True,
-            "reason": "municipal_keywords",
-            "source": "heuristic",
-            "reply": None,
-            "kind": "municipal",
-        }
-    # Ambiguous → one cheap LLM call, but never trust "relevant" without municipal cues
-    try:
-        from backend.ai.llm import get_llm_service
-
-        judged = get_llm_service().classify_topic_relevance(question)
-        relevant = bool(judged.get("relevant"))
-        # Safety: short / non-municipal questions cannot be forced on-topic by LLM
-        q = (question or "").strip()
-        if relevant and not looks_municipal(q) and len(fold(q)) < 40:
-            relevant = False
-            judged["reason"] = "llm_overrode_short_non_municipal"
-        return {
-            "summary": (
-                "Pe temă (LLM)" if relevant else "În afara temei (LLM)"
-            ),
-            "relevant": relevant,
-            "reason": judged.get("reason") or "",
-            "source": judged.get("source") or "llm",
-            "reply": None if relevant else offtopic_reply(language),
-            "kind": "municipal" if relevant else "offtopic",
-        }
-    except Exception as exc:  # noqa: BLE001
-        # Without municipal hints, fail closed (no useless corpus search)
-        if not looks_municipal(question):
-            return {
-                "summary": "În afara temei (fallback)",
-                "relevant": False,
-                "reason": f"gate_error_fail_closed:{exc.__class__.__name__}",
-                "source": "fallback",
-                "reply": offtopic_reply(language),
-                "kind": "offtopic",
-            }
-        return {
-            "summary": f"Gate skip ({exc.__class__.__name__})",
-            "relevant": True,
-            "reason": "gate_error_fail_open",
-            "source": "fallback",
-            "reply": None,
-            "kind": "municipal",
-        }
-
-
 def tool_detect_institution(question: str) -> dict[str, Any]:
     q = (question or "").lower()
     key = None
@@ -420,6 +351,9 @@ def tool_build_search_query(
     question: str, *, intent: str, institution: str | None
 ) -> dict[str, Any]:
     if intent == "concurs":
+        if institution in {"botanica", "buiucani", "ciocana", "rascani", "centru"}:
+            query = f"{INSTITUTION_CONTACTS[institution]['name']} concurs funcții vacante"
+            return {"summary": f"Query concurs: {query}", "query": query}
         parts = [
             "concurs pentru ocuparea funcției publice vacante",
             "anunț dosar specialist",
@@ -468,6 +402,7 @@ def tool_search_corpus(
     intent: str = "general",
     answer_mode: str = "fact",
     topic_terms: list[str] | None = None,
+    institution: str | None = None,
 ) -> dict[str, Any]:
     wide = intent == "concurs" or answer_mode == "list"
     k = top_k + 6 if wide else top_k
@@ -480,6 +415,9 @@ def tool_search_corpus(
         logger.warning("hybrid search failed, lexical fallback: %s", hybrid_err)
     # Intent-specific rescue only for concurs hubs (already specialized)
     if intent == "concurs":
+        if institution in {"botanica", "buiucani", "ciocana", "rascani", "centru"}:
+            targeted = _lexical_topic_hits(db, [institution], limit=10, job_only=True)
+            hits = _merge_hits(targeted, hits, limit=max(k, 12))
         title_hits = _lexical_concurs_hits(db, limit=10)
         hits = _merge_hits(hits, title_hits, limit=max(k, 10))
     if not hits and intent == "concurs":
@@ -492,6 +430,36 @@ def tool_search_corpus(
         "hits": hits,
         "titles": [h.document_title for h in hits[:5]],
     }
+
+
+def _job_chunk_with_deadline(db: Session, doc: Document) -> Chunk | None:
+    """Choose the announcement passage with an application deadline when present."""
+    chunks = (
+        db.query(Chunk)
+        .filter_by(document_id=doc.id)
+        .order_by(Chunk.id.asc())
+        .limit(12)
+        .all()
+    )
+    if not chunks:
+        return None
+    today = datetime.now(CHISINAU_TZ).date()
+    for chunk in chunks:
+        candidate = RetrievedChunk(
+            chunk_id=chunk.id,
+            document_id=doc.id,
+            document_title=doc.title,
+            document_url=doc.url,
+            content=chunk.content or "",
+            page=chunk.page,
+            section=chunk.section,
+        )
+        if current_job_state(candidate, today=today) == "open":
+            return chunk
+    return next(
+        (chunk for chunk in chunks if application_deadlines(chunk.content or "")),
+        chunks[0],
+    )
 
 
 def _lexical_concurs_hits(db: Session, *, limit: int = 8) -> list[RetrievedChunk]:
@@ -636,15 +604,10 @@ def _lexical_concurs_hits(db: Session, *, limit: int = 8) -> list[RetrievedChunk
             re.I,
         ):
             continue
-        chunk = (
-            db.query(Chunk)
-            .filter_by(document_id=d.id)
-            .order_by(Chunk.id.asc())
-            .first()
-        )
+        chunk = _job_chunk_with_deadline(db, d)
         # Hub pages: prefer full document preview so all listings stay visible
         text = (content if is_hub else (chunk.content if chunk else content)) or ""
-        preview_n = 3200 if is_hub else 2000
+        preview_n = 3200 if is_hub else 5000
         out.append(
             RetrievedChunk(
                 chunk_id=chunk.id if chunk else -d.id,
@@ -665,7 +628,7 @@ def _lexical_concurs_hits(db: Session, *, limit: int = 8) -> list[RetrievedChunk
 
 
 def _lexical_topic_hits(
-    db: Session, terms: list[str], *, limit: int = 6
+    db: Session, terms: list[str], *, limit: int = 6, job_only: bool = False
 ) -> list[RetrievedChunk]:
     """SQL title/content rescue for distinctive topic terms (any intent)."""
     clean = [t.strip() for t in terms if t and len(t.strip()) >= 4][:5]
@@ -678,25 +641,33 @@ def _lexical_topic_hits(
         like = f"%{t}%"
         clauses.append(Document.title.ilike(like))
         clauses.append(Document.url.ilike(like))
-    rows = (
-        db.query(Document)
-        .filter(or_(*clauses))
-        .order_by(Document.id.desc())
-        .limit(limit * 3)
-        .all()
-    )
+    query = db.query(Document).filter(or_(*clauses))
+    if job_only:
+        query = query.filter(
+            Document.title.ilike("%concurs%")
+            | Document.title.ilike("%vacant%")
+            | Document.title.ilike("%anunț%")
+            | Document.title.ilike("%anunt%")
+            | Document.url.ilike("%concurs%")
+            | Document.url.ilike("%vacant%")
+            | Document.content.ilike("%ocuparea func%")
+        )
+    rows = query.order_by(Document.id.desc()).limit(limit * 3).all()
     out: list[RetrievedChunk] = []
     folded_terms = {fold(t) for t in clean}
     for d in rows:
-        blob_f = fold(f"{d.title or ''} {(d.content or '')[:800]}")
+        blob_f = fold(f"{d.title or ''} {d.url or ''} {(d.content or '')[:800]}")
         if not any(t in blob_f for t in folded_terms):
             continue
-        chunk = (
-            db.query(Chunk)
-            .filter_by(document_id=d.id)
-            .order_by(Chunk.id.asc())
-            .first()
-        )
+        if job_only:
+            chunk = _job_chunk_with_deadline(db, d)
+        else:
+            chunk = (
+                db.query(Chunk)
+                .filter_by(document_id=d.id)
+                .order_by(Chunk.id.asc())
+                .first()
+            )
         text = (chunk.content if chunk else d.content) or ""
         out.append(
             RetrievedChunk(
@@ -704,7 +675,7 @@ def _lexical_topic_hits(
                 document_id=d.id,
                 document_title=d.title,
                 document_url=d.url,
-                content=text[:2000],
+                content=text[:5000 if job_only else 2000],
                 page=chunk.page if chunk else None,
                 section=chunk.section if chunk else None,
                 dense_score=0.45,
@@ -843,46 +814,21 @@ def tool_filter_by_year(
     if not wants_current or not hits:
         return {"summary": "Fără filtru temporal", "hits": hits, "kept": len(hits)}
 
+    if intent == "concurs":
+        today = datetime.now(CHISINAU_TZ).date()
+        open_hits = [h for h in hits if current_job_state(h, today=today) == "open"]
+        return {
+            "summary": f"{len(open_hits)} anunțuri cu termen de aplicare încă deschis",
+            "hits": open_hits,
+            "kept": len(open_hits),
+            "dropped": len(hits) - len(open_hits),
+        }
+
     def year_of(h: RetrievedChunk) -> int | None:
         return _chunk_year(h)
 
     dated_fresh = [h for h in hits if (year_of(h) or 0) >= year]
     dated_recent = [h for h in hits if (year_of(h) or 0) >= year - 1]
-    undated = [h for h in hits if year_of(h) is None]
-
-    # Concurs: prefer dated fresh; allow undated anunț titles; drop ancient dated
-    if intent == "concurs":
-        def looks_open(h: RetrievedChunk) -> bool:
-            blob = f"{h.document_title or ''}\n{h.content or ''}"
-            if re.search(
-                r"s-a\s+desf[ăa][sș]urat|rezultatele\s+finale|"
-                r"a\s+fost\s+(?:desfăşurat|desfasurat|încheiat)",
-                blob,
-                re.I,
-            ):
-                # finished write-up unless it still invites applications
-                if not re.search(r"depune(?:rea)?\s+dosar|până\s+(?:în|la)\s+data", blob, re.I):
-                    return False
-            return bool(
-                re.search(
-                    r"anun[țt]|concurs|vacant|funcț|functie|dosar",
-                    blob,
-                    re.I,
-                )
-            )
-
-        preferred = [h for h in dated_fresh if looks_open(h)]
-        if not preferred:
-            preferred = [h for h in dated_recent if looks_open(h)]
-        if not preferred:
-            preferred = [h for h in undated if looks_open(h)]
-        if preferred:
-            return {
-                "summary": f"Păstrate {len(preferred)} anunțuri curente/relevante",
-                "hits": preferred,
-                "kept": len(preferred),
-                "dropped": len(hits) - len(preferred),
-            }
 
     if dated_fresh:
         return {
@@ -991,48 +937,12 @@ def tool_classify_sources(usable: list[RetrievedChunk]) -> dict[str, Any]:
 def tool_detect_conflicts(
     usable: list[RetrievedChunk], question: str
 ) -> dict[str, Any]:
-    if not question_about_deadline(question) or len(usable) < 2:
-        return {"summary": "Niciun conflict detectat", "conflicts": []}
-    by_doc: dict[str, set[int]] = {}
-    quotes: dict[str, str] = {}
-    for h in usable:
-        days = _deadline_mentions(h.content or "")
-        if not days:
-            continue
-        key = h.document_title or h.document_url or str(h.document_id)
-        by_doc.setdefault(key, set()).update(days)
-        quotes[key] = (h.content or "")[:280]
-        quotes[key + "::url"] = h.document_url or ""
-        quotes[key + "::page"] = str(h.page or "")
-    conflicts = []
-    keys = list(by_doc.keys())
-    for i in range(len(keys)):
-        for j in range(i + 1, len(keys)):
-            a, b = keys[i], keys[j]
-            if by_doc[a] != by_doc[b]:
-                conflicts.append(
-                    {
-                        "left": {
-                            "document": a,
-                            "days": sorted(by_doc[a]),
-                            "quote": quotes.get(a, ""),
-                            "url": quotes.get(a + "::url"),
-                            "page": quotes.get(a + "::page") or None,
-                        },
-                        "right": {
-                            "document": b,
-                            "days": sorted(by_doc[b]),
-                            "quote": quotes.get(b, ""),
-                            "url": quotes.get(b + "::url"),
-                            "page": quotes.get(b + "::page") or None,
-                        },
-                    }
-                )
+    conflicts = detect_document_conflicts(usable, question)
     return {
         "summary": (
-            f"{len(conflicts)} conflict(e) de termene"
+            f"{len(conflicts)} diferență(e) de termene sau taxe"
             if conflicts
-            else "Niciun conflict de termene"
+            else "Nicio diferență verificabilă"
         ),
         "conflicts": conflicts,
     }
@@ -1530,17 +1440,22 @@ def tool_broaden_corpus_search(
     intent: str,
     top_k: int = 10,
     topic_terms: list[str] | None = None,
+    institution: str | None = None,
 ) -> dict[str, Any]:
     """Second-pass hybrid search with alternate phrasings; union into evidence pool."""
     alts = _heuristic_queries(question, intent=intent, institution=None)
     if intent == "concurs":
-        alts = [
-            "anunț concurs ocuparea funcției publice",
-            "pretura concurs specialist dosar",
-            "AVIZ CONCURS etapă",
-            "funcții publice vacante primărie",
-            *alts,
-        ]
+        if institution in {"botanica", "buiucani", "ciocana", "rascani", "centru"}:
+            name = INSTITUTION_CONTACTS[institution]["name"]
+            alts = [f"{name} concurs", f"{institution} funcții vacante"]
+        else:
+            alts = [
+                "anunț concurs ocuparea funcției publice",
+                "pretura concurs specialist dosar",
+                "AVIZ CONCURS etapă",
+                "funcții publice vacante primărie",
+                *alts,
+            ]
     merged = list(existing)
     added = 0
     for q in alts[:6]:
@@ -1556,6 +1471,12 @@ def tool_broaden_corpus_search(
     if topic_terms:
         merged = _merge_hits(
             _lexical_topic_hits(db, topic_terms, limit=8), merged, limit=top_k + 12
+        )
+    if intent == "concurs" and institution in {"botanica", "buiucani", "ciocana", "rascani", "centru"}:
+        merged = _merge_hits(
+            _lexical_topic_hits(db, [institution], limit=12, job_only=True),
+            merged,
+            limit=top_k + 12,
         )
     return {
         "summary": f"Extins: {len(merged)} pasaje (+{added} noi)",
@@ -1857,6 +1778,7 @@ def run_agent_pipeline(
             intent=state.intent,
             answer_mode=state.answer_mode,
             topic_terms=state.topic_terms,
+            institution=state.institution,
         ),
     )
     yield ev
@@ -1871,7 +1793,8 @@ def run_agent_pipeline(
     )
     yield ev
     state.tools_run.append("filter_noise_docs")
-    hits = (denoised or {}).get("hits") or hits
+    if denoised is not None:
+        hits = denoised.get("hits", hits)
 
     # 7 year filter
     yield _start_event("filter_by_year")
@@ -1883,7 +1806,8 @@ def run_agent_pipeline(
     )
     yield ev
     state.tools_run.append("filter_by_year")
-    hits = (filtered or {}).get("hits") or hits
+    if filtered is not None:
+        hits = filtered.get("hits", hits)
     state.hits = hits
 
     # 8 verify
@@ -1938,6 +1862,7 @@ def run_agent_pipeline(
                 intent=state.intent,
                 top_k=max(top_k, 10),
                 topic_terms=state.topic_terms,
+                institution=state.institution,
             ),
         )
         yield ev
@@ -1960,14 +1885,16 @@ def run_agent_pipeline(
             "filter_noise_docs",
             lambda: tool_filter_noise_docs(hits, intent=state.intent),
         )
-        hits = (denoised2 or {}).get("hits") or hits
+        if denoised2 is not None:
+            hits = denoised2.get("hits", hits)
         filtered2, _ = run_tool(
             "filter_by_year",
             lambda: tool_filter_by_year(
                 hits, wants_current=state.wants_current, intent=state.intent
             ),
         )
-        hits = (filtered2 or {}).get("hits") or hits
+        if filtered2 is not None:
+            hits = filtered2.get("hits", hits)
         state.hits = hits
 
         yield _start_event("verify_evidence")
@@ -2003,7 +1930,7 @@ def run_agent_pipeline(
             else:
                 state.gate, state.usable = best_gate, best_usable
         else:
-            rank = {"missing": 0, "conflict": 1, "supported": 2}
+            rank = {"missing": 0, "supported": 1, "conflict": 2}
             if rank.get(new_gate, 0) > rank.get(best_gate, 0) or (
                 new_gate == best_gate and len(new_usable) > len(best_usable)
             ):
@@ -2052,8 +1979,8 @@ def run_agent_pipeline(
     state.tools_run.append("classify_sources")
     state.source_meta = (classified or {}).get("sources") or []
 
-    # 14 conflicts (optional — deadlines only)
-    if question_about_deadline(question):
+    # 14 conflicts (optional — explicit service durations and fees)
+    if len(state.usable) >= 2:
         yield _start_event("detect_conflicts")
         conflicted, ev = run_tool(
             "detect_conflicts",
@@ -2133,7 +2060,11 @@ def run_agent_pipeline(
                     continue
                 # attach fuller text onto matching usable hit
                 for h in state.usable:
-                    if h.document_id == d["id"] and len(preview) > len(h.content or ""):
+                    if (
+                        h.document_id == d["id"]
+                        and len(preview) > len(h.content or "")
+                        and not (state.intent == "concurs" and state.wants_current)
+                    ):
                         h.content = preview
                         break
 
@@ -2244,6 +2175,23 @@ def run_agent_pipeline(
         _cov, ev = run_tool("source_coverage", lambda: tool_source_coverage(db))
         yield ev
         state.tools_run.append("source_coverage")
+
+    # Broaden/read steps can reintroduce stale or wrong-sector documents.
+    if state.intent == "concurs":
+        sector = sector_in_question(question)
+        state.usable = [
+            h for h in state.usable if job_hit_matches_sector(h, sector)
+        ]
+        if state.wants_current:
+            today = datetime.now(CHISINAU_TZ).date()
+            state.usable = [
+                h for h in state.usable if current_job_state(h, today=today) == "open"
+            ]
+        if not state.usable:
+            state.gate = "missing"
+            state.contact = None
+            state.confidence = "low"
+            state.confidence_score = 0.2
 
     # corpus health (light)
     yield _start_event("corpus_health")

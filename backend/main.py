@@ -77,6 +77,9 @@ def _migrate_schema() -> None:
             conn.execute(
                 text("ALTER TABLE feedback ADD COLUMN IF NOT EXISTS detail TEXT")
             )
+            conn.execute(
+                text("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS conflicts_json TEXT")
+            )
         logger.info("Schema migrate ok")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Schema migrate: %s", exc)

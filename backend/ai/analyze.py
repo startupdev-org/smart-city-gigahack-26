@@ -133,17 +133,18 @@ _LIST_RE = re.compile(
 _CURRENT_RE = re.compile(
     r"\b("
     r"acum|current|now|deschis|deschise|открыт|ast[aă]zi|astazi|"
-    r"2026|în\s+prezent|in\s+prezent|disponibil|active|ongoing|"
-    r"vacant[aăe]?|конкурс|aplic|aplica|angajar"
+    r"în\s+prezent|in\s+prezent|disponibil|active|ongoing|"
+    r"vacant[aăe]?|сейчас|текущ|актуаль|aplic|aplica|angajar"
     r")\b",
     re.I,
 )
 
 _JOB_RE = re.compile(
     r"(?:"
-    r"concurs|vacant|angajar|ваканс|job\s*opening|posturi?\s+vacant|"
-    r"func[tț](?:ii|ia|ie|iei)?\s+public|"
-    r"funct(?:ii|ia|ie|iei)?\s+public|"
+    r"concurs|vacant|angajar|ваканс|конкурс|job\s*opening|posturi?\s+vacant|"
+    r"func[tț](?:ii|ia|ie|iei)?\s+(?:public|deschis|vacant)|"
+    r"funct(?:ii|ia|ie|iei)?\s+(?:public|deschis|vacant)|"
+    r"posturi?\s+(?:deschis|vacant)|"
     r"ocuparea\s+func|locuri\s+de\s+munc[aă]|"
     r"\baplic[aă]|\baplica\b|candidat(?:ur[aă])?"
     r")",
@@ -163,7 +164,7 @@ _AUTH_RE = re.compile(
 )
 
 _DEADLINE_RE = re.compile(
-    r"\b(termen|deadline|срочн|срок|c[aâ]t\s+dureaz[aă]|cat\s+dureaza|"
+    r"\b(termen\w*|deadline|срочн|срок|c[aâ]t\s+dureaz[aă]|cat\s+dureaza|"
     r"zile\s+lucr|[îi]n\s+c[aâ]t\s+timp|in\s+cat\s+timp)\b",
     re.I,
 )
@@ -263,6 +264,38 @@ _MUNICIPAL_HINT_RE = re.compile(
     re.I,
 )
 
+# A named municipal authority plus a public-service request is strong enough to
+# skip the semantic classifier. A single broad word such as "Chișinău", "contact"
+# or "document" is only a hint, not proof that the question is in scope.
+_MUNICIPAL_AUTHORITY_RE = re.compile(
+    r"prim[aă]ri|pretur|dgaurf|ghiseu\s+unic|ghi[sș]eu\s+unic|"
+    r"consiliul\s+municipal|city\s+hall|municipal\s+council|"
+    r"примар|претур|городск(?:ая|ой)\s+администрац",
+    re.I,
+)
+_PUBLIC_SERVICE_RE = re.compile(
+    r"autoriz|permis|certificat|peti[tț]|sesizar|tax[aă]|impozit|"
+    r"concurs|func[tț]i|vacant|servici|program|contact|telefon|"
+    r"adres[aă]|acte|document|regulament|hot[aă]r[aâ]r|"
+    r"permit|petition|tax|public\s+job|opening\s+hours|"
+    r"разрешен|документ|налог|конкурс|контакт|адрес|услуг",
+    re.I,
+)
+_CIVIC_TOPIC_RE = re.compile(
+    r"prim[aă]ri|pretur|dgaurf|autoriz|urbanism|peti[tț]|sesizar|"
+    r"impozit|parcaj|salubriz|concurs|func[tț]i\s+public|"
+    r"transport\s+public|permit|petition|municipal\s+service|"
+    r"city\s+hall|public\s+job|разрешен|примар|претур|налог|конкурс",
+    re.I,
+)
+_BUILDING_RE = re.compile(r"constru|build|строит|постро|строитель", re.I)
+_PAPERWORK_RE = re.compile(
+    r"acte|document|hârt|hart|autoriza|permis|aprobar|"
+    r"what\s+do\s+i\s+need|papers|approval|permit|"
+    r"документ|бумаг|разрешен|что\s+нужно",
+    re.I,
+)
+
 _CLEAR_OFFTOPIC_RE = re.compile(
     r"(?:"
     # identity / about the user or the assistant
@@ -277,7 +310,7 @@ _CLEAR_OFFTOPIC_RE = re.compile(
     r"what\s+did\s+i\s+(?:say|write)|previous\s+message|istoric(ul)?\s+chat|"
     r"îți\s+amintești|iti\s+amintesti|remember\s+what|"
     # jokes / entertainment / food
-    r"spune[- ]mi\s+o\s+glum[aă]|tell\s+me\s+a\s+joke|ban[aă]n[aă]|pizza|"
+    r"spune[- ]mi\s+o\s+glum[aă]|tell\s+me\s+a\s+joke|"
     r"re[tț]et[aă]|recipe|c[aâ]ntec|melodie|film\s+recomand|"
     # coding / homework / money unrelated
     r"scrie[- ]mi\s+(?:un\s+)?(?:cod|script|poem|eseu)|write\s+(?:me\s+)?(?:code|poem|essay)|"
@@ -304,6 +337,22 @@ _IDENTITY_RE = re.compile(
 
 def looks_municipal(question: str) -> bool:
     return bool(_MUNICIPAL_HINT_RE.search(question or ""))
+
+
+def looks_explicitly_municipal(question: str) -> bool:
+    return bool(
+        _MUNICIPAL_AUTHORITY_RE.search(question or "")
+        and _PUBLIC_SERVICE_RE.search(question or "")
+    )
+
+
+def looks_plausibly_municipal(question: str) -> bool:
+    """Conservative fallback when the semantic classifier cannot be reached."""
+    q = question or ""
+    return bool(
+        _CIVIC_TOPIC_RE.search(q)
+        or (_BUILDING_RE.search(q) and _PAPERWORK_RE.search(q))
+    )
 
 
 def looks_identity_question(question: str) -> bool:
@@ -336,7 +385,7 @@ def identity_reply(lang: str = "ro") -> str:
         return (
             "I'm **CivicAI**, an assistant for official Chișinău City Hall information. "
             "I help with permits, contacts, public-job contests, taxes and municipal "
-            "services — only from the indexed corpus. Ask a City Hall–related question."
+            "services — only from the indexed corpus. Ask a City Hall-related question."
         )
     return (
         "Sunt **CivicAI**, asistentul pentru informații oficiale ale Primăriei "
