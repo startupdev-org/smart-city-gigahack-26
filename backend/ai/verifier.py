@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-from collections import defaultdict
 
 from backend.ai.analyze import (
     fold,
@@ -12,15 +11,11 @@ from backend.ai.analyze import (
     wants_list as analyze_wants_list,
 )
 from backend.ai.current_jobs import current_job_state, job_hit_matches_sector, sector_in_question
+from backend.ai.conflicts import detect_document_conflicts
 from backend.ai.retrieval import RetrievedChunk
 
-_DAY_RE = re.compile(
-    r"(\d{1,3})\s*(?:de\s+)?(?:zile|дней|дня|zi|день)\s*(?:lucrătoare|рабочих|calendaristice|календарных)?",
-    re.IGNORECASE,
-)
-
 _TERM_Q_RE = re.compile(
-    r"\b(termen|deadline|срочн|срок|cât\s+durează|cat\s+dureaza|zile\s+lucr|"
+    r"\b(termen\w*|deadline|срочн|срок|cât\s+durează|cat\s+dureaza|zile\s+lucr|"
     r"în\s+cât\s+timp|in\s+cat\s+timp)\b",
     re.IGNORECASE,
 )
@@ -68,10 +63,6 @@ def question_about_deadline(question: str) -> bool:
 
 def is_generic_assistant_blurb(answer: str) -> bool:
     return bool(_GENERIC_ASSISTANT_RE.search(answer or ""))
-
-
-def _deadline_mentions(text: str) -> set[int]:
-    return {int(m.group(1)) for m in _DAY_RE.finditer(text or "")}
 
 
 def _token_overlap(question: str, text: str) -> float:
@@ -348,15 +339,7 @@ def verify_evidence(
             else:
                 return "missing", []
 
-    if question_about_deadline(question):
-        by_doc: dict[int, set[int]] = defaultdict(set)
-        for c in usable:
-            days = _deadline_mentions(c.content)
-            if days:
-                by_doc[c.document_id].update(days)
-        if len(by_doc) >= 2:
-            sets = list(by_doc.values())
-            if len({frozenset(s) for s in sets}) >= 2:
-                return "conflict", usable
+    if detect_document_conflicts(usable, question):
+        return "conflict", usable
 
     return "supported", usable

@@ -89,6 +89,17 @@ function toolLabel(
   return t.label_ro;
 }
 
+function conflictValue(
+  side: { value?: string; days: number[] },
+  field: string | undefined,
+  lang: UiLang
+) {
+  if (field === "duration_days" && side.days.length) {
+    return `${side.days.join(" / ")} ${tx(lang, "zile", "дней", "days")}`;
+  }
+  return side.value || `${side.days.join(" / ")} ${tx(lang, "zile", "дней", "days")}`;
+}
+
 const LIKES_KEY = "civicai_likes_v1";
 
 function loadLikes(): Record<string, true> {
@@ -184,6 +195,8 @@ export function ChatApp() {
           content: string;
           status?: string;
           sources?: ChatResponse["sources"];
+          conflicts?: ChatResponse["conflicts"];
+          next_action?: ChatResponse["next_action"];
         }) => ({
           role: r.role as "user" | "assistant",
           text: r.content,
@@ -193,8 +206,9 @@ export function ChatApp() {
                 status: r.status || "supported",
                 answer: r.content,
                 sources: r.sources || [],
-                next_action: null,
-                confidence: "medium",
+                conflicts: r.conflicts || [],
+                next_action: r.next_action || null,
+                confidence: r.status === "missing" || r.status === "conflict" ? "low" : "medium",
                 language: lang,
               }
               : undefined,
@@ -608,6 +622,11 @@ export function ChatApp() {
                         {m.typing && <span className="caret" />}
                       </div>
                     )}
+                    {m.data && !m.streaming && isMissing && (
+                      <div className="meta-row">
+                        <StatusBadge status="missing" lang={lang} />
+                      </div>
+                    )}
                     {m.data && !m.streaming && !isMissing && (
                       <div className="meta">
                         <div className="meta-row">
@@ -629,17 +648,16 @@ export function ChatApp() {
                             <div className="conflict-title">
                               {tx(
                                 lang,
-                                "Conflict radar — termene diferite",
-                                "Радар конфликтов — разные сроки",
-                                "Conflict radar — different deadlines"
+                                "Posibilă neconcordanță între documente",
+                                "Возможное расхождение между документами",
+                                "Possible discrepancy between documents"
                               )}
                             </div>
                             {m.data.conflicts.map((c, ci) => (
                               <div key={ci} className="conflict-grid">
                                 <div className="conflict-pane">
                                   <div className="conflict-days">
-                                    {c.left.days.join(" / ")}{" "}
-                                    {tx(lang, "zile", "дней", "days")}
+                                    {conflictValue(c.left, c.field, lang)}
                                   </div>
                                   <div className="conflict-doc">{c.left.document}</div>
                                   <div className="conflict-quote">{c.left.quote}</div>
@@ -651,8 +669,7 @@ export function ChatApp() {
                                 </div>
                                 <div className="conflict-pane">
                                   <div className="conflict-days">
-                                    {c.right.days.join(" / ")}{" "}
-                                    {tx(lang, "zile", "дней", "days")}
+                                    {conflictValue(c.right, c.field, lang)}
                                   </div>
                                   <div className="conflict-doc">{c.right.document}</div>
                                   <div className="conflict-quote">{c.right.quote}</div>
@@ -1036,6 +1053,13 @@ function StatusBadge({
   status: string;
   lang: UiLang;
 }) {
+  if (status === "reused") {
+    return (
+      <span className="badge">
+        {tx(lang, "Din această conversație", "Из этой беседы", "From this conversation")}
+      </span>
+    );
+  }
   if (status === "supported") {
     return (
       <span className="badge">
@@ -1046,13 +1070,20 @@ function StatusBadge({
   if (status === "conflict") {
     return (
       <span className="badge danger">
-        {tx(lang, "Sursele se contrazic", "Источники противоречат", "Sources conflict")}
+        {tx(lang, "Posibilă neconcordanță", "Возможное расхождение", "Possible discrepancy")}
+      </span>
+    );
+  }
+  if (status === "out_of_scope") {
+    return (
+      <span className="badge warn">
+        {tx(lang, "În afara domeniului", "Вне темы", "Outside scope")}
       </span>
     );
   }
   return (
     <span className="badge warn">
-      {tx(lang, "Nu am găsit în corpus", "Нет в корпусе", "Not found in corpus")}
+      {tx(lang, "Nu pot verifica din documente", "Не удалось подтвердить по документам", "Not verified by documents")}
     </span>
   );
 }

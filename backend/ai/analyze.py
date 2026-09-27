@@ -164,7 +164,7 @@ _AUTH_RE = re.compile(
 )
 
 _DEADLINE_RE = re.compile(
-    r"\b(termen|deadline|срочн|срок|c[aâ]t\s+dureaz[aă]|cat\s+dureaza|"
+    r"\b(termen\w*|deadline|срочн|срок|c[aâ]t\s+dureaz[aă]|cat\s+dureaza|"
     r"zile\s+lucr|[îi]n\s+c[aâ]t\s+timp|in\s+cat\s+timp)\b",
     re.I,
 )

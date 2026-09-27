@@ -25,12 +25,12 @@ from backend.ai.current_jobs import (
     job_hit_matches_sector,
     sector_in_question,
 )
+from backend.ai.conflicts import detect_document_conflicts
 from backend.ai.prompts import CHISINAU_TZ
 from backend.ai.retrieval import HybridRetriever, RetrievedChunk
 from backend.ai.scope import classify_scope as tool_scope_gate
 from backend.ai.verifier import (
     _chunk_year,
-    _deadline_mentions,
     _token_overlap,
     question_about_deadline,
     verify_evidence,
@@ -937,48 +937,12 @@ def tool_classify_sources(usable: list[RetrievedChunk]) -> dict[str, Any]:
 def tool_detect_conflicts(
     usable: list[RetrievedChunk], question: str
 ) -> dict[str, Any]:
-    if not question_about_deadline(question) or len(usable) < 2:
-        return {"summary": "Niciun conflict detectat", "conflicts": []}
-    by_doc: dict[str, set[int]] = {}
-    quotes: dict[str, str] = {}
-    for h in usable:
-        days = _deadline_mentions(h.content or "")
-        if not days:
-            continue
-        key = h.document_title or h.document_url or str(h.document_id)
-        by_doc.setdefault(key, set()).update(days)
-        quotes[key] = (h.content or "")[:280]
-        quotes[key + "::url"] = h.document_url or ""
-        quotes[key + "::page"] = str(h.page or "")
-    conflicts = []
-    keys = list(by_doc.keys())
-    for i in range(len(keys)):
-        for j in range(i + 1, len(keys)):
-            a, b = keys[i], keys[j]
-            if by_doc[a] != by_doc[b]:
-                conflicts.append(
-                    {
-                        "left": {
-                            "document": a,
-                            "days": sorted(by_doc[a]),
-                            "quote": quotes.get(a, ""),
-                            "url": quotes.get(a + "::url"),
-                            "page": quotes.get(a + "::page") or None,
-                        },
-                        "right": {
-                            "document": b,
-                            "days": sorted(by_doc[b]),
-                            "quote": quotes.get(b, ""),
-                            "url": quotes.get(b + "::url"),
-                            "page": quotes.get(b + "::page") or None,
-                        },
-                    }
-                )
+    conflicts = detect_document_conflicts(usable, question)
     return {
         "summary": (
-            f"{len(conflicts)} conflict(e) de termene"
+            f"{len(conflicts)} diferență(e) de termene sau taxe"
             if conflicts
-            else "Niciun conflict de termene"
+            else "Nicio diferență verificabilă"
         ),
         "conflicts": conflicts,
     }
@@ -1966,7 +1930,7 @@ def run_agent_pipeline(
             else:
                 state.gate, state.usable = best_gate, best_usable
         else:
-            rank = {"missing": 0, "conflict": 1, "supported": 2}
+            rank = {"missing": 0, "supported": 1, "conflict": 2}
             if rank.get(new_gate, 0) > rank.get(best_gate, 0) or (
                 new_gate == best_gate and len(new_usable) > len(best_usable)
             ):
@@ -2015,8 +1979,8 @@ def run_agent_pipeline(
     state.tools_run.append("classify_sources")
     state.source_meta = (classified or {}).get("sources") or []
 
-    # 14 conflicts (optional — deadlines only)
-    if question_about_deadline(question):
+    # 14 conflicts (optional — explicit service durations and fees)
+    if len(state.usable) >= 2:
         yield _start_event("detect_conflicts")
         conflicted, ev = run_tool(
             "detect_conflicts",
