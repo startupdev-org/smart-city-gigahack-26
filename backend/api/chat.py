@@ -621,6 +621,7 @@ def chat_stream(
                         "name": "generate_answer",
                         "status": "start",
                         "label_ro": "Generez răspunsul",
+                        "label_en": "Generating the answer",
                         "label_ru": "Генерирую ответ",
                         "detail": "",
                         "ms": 0,
@@ -634,6 +635,7 @@ def chat_stream(
                         "name": "generate_answer",
                         "status": "done",
                         "label_ro": "Generez răspunsul",
+                        "label_en": "Generating the answer",
                         "label_ru": "Генерирую ответ",
                         "detail": "contact lookup",
                         "ms": 0,
@@ -705,6 +707,7 @@ def chat_stream(
                 {
                     "step": "generate",
                     "label_ro": "Generez răspunsul…",
+                    "label_en": "Generating the answer...",
                     "label_ru": "Генерирую ответ…",
                 },
             )
@@ -714,6 +717,7 @@ def chat_stream(
                     "name": "generate_answer",
                     "status": "start",
                     "label_ro": "Generez răspunsul",
+                    "label_en": "Generating the answer",
                     "label_ru": "Генерирую ответ",
                     "detail": "",
                     "ms": 0,

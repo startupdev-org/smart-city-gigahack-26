@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { LanguageSwitcher, useI18n } from "@/components/I18nProvider";
 import {
   apiAdminCost,
   apiAdminCostProject,
@@ -64,6 +65,7 @@ function money(n: unknown, suffix = "USD") {
 
 export default function AdminPage() {
   const { user, ready, logout, login } = useAuth();
+  const { t } = useI18n();
   const router = useRouter();
   const [stats, setStats] = useState<any>(null);
   const [cost, setCost] = useState<any>(null);
@@ -134,20 +136,20 @@ export default function AdminPage() {
 
   const tabs = useMemo(() => {
     const all: { id: Tab; label: string; show: boolean }[] = [
-      { id: "overview", label: "Overview", show: perms.stats },
-      { id: "ingest", label: "Încarcă materiale", show: perms.ingest },
-      { id: "sources", label: "Surse", show: perms.sources },
-      { id: "docs", label: "Documente", show: perms.documents },
-      { id: "feedback", label: "Feedback", show: perms.feedback },
-      { id: "users", label: "Utilizatori & roluri", show: perms.users },
-      { id: "cost", label: "Cost & profit", show: perms.cost },
+      { id: "overview", label: t("admin.overview"), show: perms.stats },
+      { id: "ingest", label: t("admin.uploadMaterials"), show: perms.ingest },
+      { id: "sources", label: t("admin.sources"), show: perms.sources },
+      { id: "docs", label: t("admin.documents"), show: perms.documents },
+      { id: "feedback", label: t("admin.feedback"), show: perms.feedback },
+      { id: "users", label: t("admin.userRoles"), show: perms.users },
+      { id: "cost", label: t("admin.costProfit"), show: perms.cost },
       { id: "llm", label: "LLM", show: perms.llm },
-      { id: "tools", label: "Agent tools", show: perms.llm || perms.stats },
+      { id: "tools", label: t("admin.agentTools"), show: perms.llm || perms.stats },
       { id: "health", label: "Health", show: perms.health },
-      { id: "demo", label: "Demo Q", show: perms.demo },
+      { id: "demo", label: t("admin.demoQuestions"), show: perms.demo },
     ];
     return all.filter((t) => t.show);
-  }, [perms]);
+  }, [perms, t]);
 
   async function refresh(t: string, role: string) {
     const p = permissionsForRole(role);
@@ -455,24 +457,24 @@ export default function AdminPage() {
       <div className="admin-shell">
         <div className="admin-wrap" style={{ maxWidth: 440 }}>
           <Link href="/" className="muted">
-            ← Înapoi la chat
+            ← {t("navigation.backToChat")}
           </Link>
-          <h1 className="admin-h1">Panou operațional</h1>
+          <h1 className="admin-h1">{t("admin.operationalPanel")}</h1>
+          <LanguageSwitcher className="chip" />
           {error && (
             <div className="err" style={{ marginTop: 12 }}>
               {error}
             </div>
           )}
           <p className="muted" style={{ marginTop: 12, lineHeight: 1.5 }}>
-            Acces pentru <strong>admin</strong> sau <strong>manager</strong>.
-            Manager: feedback, statistici, încărcare documente/surse.
+            {t("admin.accessDescription")}
           </p>
           <form
             onSubmit={doAdminLogin}
             style={{ marginTop: 16, display: "grid", gap: 10 }}
           >
             <label className="admin-field">
-              Email
+              {t("auth.email")}
               <input
                 value={adminEmail}
                 onChange={(e) => setAdminEmail(e.target.value)}
@@ -480,7 +482,7 @@ export default function AdminPage() {
               />
             </label>
             <label className="admin-field">
-              Parolă
+              {t("auth.password")}
               <input
                 type="password"
                 value={adminPass}
@@ -489,7 +491,7 @@ export default function AdminPage() {
               />
             </label>
             <button type="submit" className="btn" disabled={loginBusy}>
-              {loginBusy ? "…" : "Intră în panou"}
+              {loginBusy ? "…" : t("admin.enterPanel")}
             </button>
           </form>
         </div>
@@ -528,7 +530,7 @@ export default function AdminPage() {
             <Link href="/" className="muted">
               ← Chat
             </Link>
-            <h1 className="admin-h1">CivicAI Control</h1>
+            <h1 className="admin-h1">CivicAI {t("admin.controlPanel")}</h1>
             <p className="admin-sub">
               {user.email} · rol <strong>{user.role}</strong>
               {user.role === "manager"
@@ -537,6 +539,7 @@ export default function AdminPage() {
             </p>
           </div>
           <div className="admin-top-actions">
+            <LanguageSwitcher className="chip" />
             <button
               type="button"
               className="btn-ghost"
@@ -544,10 +547,10 @@ export default function AdminPage() {
                 void refresh(token, user.role).catch((e) => setError(String(e)))
               }
             >
-              Reîncarcă
+              {t("navigation.refresh")}
             </button>
             <button type="button" className="btn-ghost" onClick={() => logout()}>
-              Logout
+              {t("navigation.signOut")}
             </button>
           </div>
         </header>
@@ -555,7 +558,7 @@ export default function AdminPage() {
         {error && <div className="err">{error}</div>}
         {partialErrors.length > 0 && (
           <div className="err" style={{ opacity: 0.8 }}>
-            Unele endpoint-uri: {partialErrors.slice(0, 3).join("; ")}
+            {t("admin.servicesUnavailable")} {partialErrors.slice(0, 3).join("; ")}
           </div>
         )}
         {toast && <div className="toast">{toast}</div>}
@@ -581,16 +584,16 @@ export default function AdminPage() {
 
         {tab === "overview" && stats && (
           <section className="admin-section">
-            <h2>Overview</h2>
+            <h2>{t("admin.overview")}</h2>
             <div className="admin-kpi-grid">
               {[
-                ["Documente", stats.documents],
+                [t("admin.documents"), stats.documents],
                 ["Chunks", stats.chunks],
-                ["Surse", stats.sources],
-                ["Căutări", stats.searches],
-                ["Utilizatori", stats.users_total],
-                ["Aprobați", stats.users_approved],
-                ["Feedback", stats.feedback_total],
+                [t("admin.sources"), stats.sources],
+                [t("admin.searches"), stats.searches],
+                [t("admin.users"), stats.users_total],
+                [t("admin.approved"), stats.users_approved],
+                [t("admin.feedback"), stats.feedback_total],
                 ["Util %", stats.feedback_useful_pct ?? "—"],
               ].map(([k, v]) => (
                 <div key={String(k)} className="admin-kpi">
@@ -608,13 +611,13 @@ export default function AdminPage() {
 
         {tab === "ingest" && (
           <section className="admin-section">
-            <h2>Încarcă materiale</h2>
+            <h2>{t("admin.uploadMaterials")}</h2>
             <p className="muted">
               Adaugă un URL oficial (HTML/PDF/Office) sau lipește text — se
               chunk-uiește și se indexează în RAG.
             </p>
             <div className="admin-card">
-              <h3>Din link</h3>
+              <h3>{t("admin.uploadFromUrl")}</h3>
               <label className="admin-field">
                 URL
                 <input
@@ -624,7 +627,7 @@ export default function AdminPage() {
                 />
               </label>
               <label className="admin-field">
-                Titlu (opțional)
+                {t("admin.titleOptional")}
                 <input
                   value={ingestTitle}
                   onChange={(e) => setIngestTitle(e.target.value)}
@@ -636,11 +639,11 @@ export default function AdminPage() {
                 disabled={ingestBusy || !ingestUrl.trim()}
                 onClick={() => void runIngestUrl()}
               >
-                {ingestBusy ? "Indexez…" : "Descarcă & indexează"}
+                {ingestBusy ? "…" : t("admin.downloadIndex")}
               </button>
             </div>
             <div className="admin-card" style={{ marginTop: 14 }}>
-              <h3>Text / notă internă</h3>
+              <h3>{t("admin.internalText")}</h3>
               <label className="admin-field">
                 Titlu
                 <input
@@ -649,7 +652,7 @@ export default function AdminPage() {
                 />
               </label>
               <label className="admin-field">
-                Conținut (≥40 caractere)
+                {t("admin.contentMinimum")}
                 <textarea
                   rows={8}
                   value={ingestText}
@@ -666,7 +669,7 @@ export default function AdminPage() {
                 }
                 onClick={() => void runIngestText()}
               >
-                Salvează în corpus
+                {t("admin.saveCorpus")}
               </button>
             </div>
           </section>
@@ -674,19 +677,19 @@ export default function AdminPage() {
 
         {tab === "sources" && (
           <section className="admin-section">
-            <h2>Surse</h2>
+            <h2>{t("admin.sources")}</h2>
             <div className="admin-card">
-              <h3>Adaugă sursă</h3>
+              <h3>{t("admin.addSource")}</h3>
               <div className="admin-form-row">
                 <label className="admin-field">
-                  Nume
+                  {t("admin.name")}
                   <input
                     value={sourceName}
                     onChange={(e) => setSourceName(e.target.value)}
                   />
                 </label>
                 <label className="admin-field">
-                  URL rădăcină
+                  {t("admin.rootUrl")}
                   <input
                     value={sourceUrl}
                     onChange={(e) => setSourceUrl(e.target.value)}
@@ -700,7 +703,7 @@ export default function AdminPage() {
                 disabled={ingestBusy}
                 onClick={() => void addSource()}
               >
-                Adaugă sursă
+                {t("admin.addSource")}
               </button>
             </div>
             <div className="admin-table-wrap" style={{ marginTop: 16 }}>
@@ -737,16 +740,16 @@ export default function AdminPage() {
 
         {tab === "docs" && (
           <section className="admin-section">
-            <h2>Documente indexate</h2>
+            <h2>{t("admin.indexedDocuments")}</h2>
             <div className="admin-form-row" style={{ marginBottom: 12 }}>
               <input
                 value={docQuery}
                 onChange={(e) => setDocQuery(e.target.value)}
-                placeholder="Caută titlu / URL…"
+                placeholder={t("admin.searchTitleUrl")}
                 style={{ flex: 1 }}
               />
               <button type="button" className="btn" onClick={() => void searchDocs()}>
-                Caută
+                {t("admin.search")}
               </button>
             </div>
             <div className="admin-list">
@@ -774,7 +777,7 @@ export default function AdminPage() {
                       )
                     }
                   >
-                    Șterge
+                    {t("admin.delete")}
                   </button>
                 </div>
               ))}
@@ -784,10 +787,10 @@ export default function AdminPage() {
 
         {tab === "feedback" && (
           <section className="admin-section">
-            <h2>Feedback cetățeni</h2>
+            <h2>{t("admin.citizenFeedback")}</h2>
             <div className="admin-list">
               {feedback.length === 0 ? (
-                <p className="muted">Niciun feedback încă.</p>
+                <p className="muted">{t("admin.noFeedback")}</p>
               ) : (
                 feedback.map((f) => (
                   <div key={f.id} className="admin-row admin-row-stack">
@@ -835,7 +838,7 @@ export default function AdminPage() {
                       disabled={busyId === u.id}
                       onClick={() => void approve(u.id, true)}
                     >
-                      Aprobă
+                      {t("admin.approve")}
                     </button>
                   </div>
                 ))}
@@ -847,8 +850,8 @@ export default function AdminPage() {
                   <tr>
                     <th>Email</th>
                     <th>Rol</th>
-                    <th>Status</th>
-                    <th>Acțiuni</th>
+                    <th>{t("admin.status")}</th>
+                    <th>{t("admin.actions")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -878,7 +881,7 @@ export default function AdminPage() {
                             className="btn"
                             onClick={() => void approve(u.id, true)}
                           >
-                            Aprobă
+                            {t("admin.approve")}
                           </button>
                         )}
                         {u.approved && u.role === "citizen" && (
@@ -887,7 +890,7 @@ export default function AdminPage() {
                             className="btn-ghost"
                             onClick={() => void approve(u.id, false)}
                           >
-                            Revocă
+                            {t("admin.revoke")}
                           </button>
                         )}
                       </td>

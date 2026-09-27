@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Markdown, annexLabel } from "@/components/Markdown";
 import { useAuth } from "@/components/AuthProvider";
+import { useI18n, type Locale } from "@/components/I18nProvider";
 import {
   apiChatMessages,
   apiChatStream,
@@ -66,7 +67,7 @@ const SUGGESTIONS_EN = [
   "Where do I submit a petition at Pretura Buiucani?",
 ];
 
-type UiLang = "ro" | "ru" | "en";
+type UiLang = Locale;
 
 function tx(lang: UiLang, ro: string, ru: string, en: string) {
   if (lang === "ru") return ru;
@@ -74,8 +75,16 @@ function tx(lang: UiLang, ro: string, ru: string, en: string) {
   return ro;
 }
 
-function toolLabel(t: { label_ro: string; label_ru: string; label_en?: string }, lang: UiLang) {
-  if (lang === "ru") return t.label_ru;
+function toolLabel(
+  t: { name?: string; label_ro: string; label_ru: string; label_en?: string },
+  lang: UiLang
+) {
+  // Some streamed completion events contain only the RO/RU labels. Keep this
+  // commonly displayed step translated instead of silently falling back to RO.
+  if (t.name === "generate_answer") {
+    return tx(lang, "Generez răspunsul", "Генерирую ответ", "Generating the answer");
+  }
+  if (lang === "ru") return t.label_ru || t.label_ro;
   if (lang === "en") return t.label_en || t.label_ro;
   return t.label_ro;
 }
@@ -115,12 +124,9 @@ function uniqueSources(sources: Source[]): Source[] {
 
 export function ChatApp() {
   const { user, logout, ready } = useAuth();
+  const { locale: lang, setLocale: setLang } = useI18n();
+  const { t } = useI18n();
   const router = useRouter();
-  const [lang, setLang] = useState<UiLang>(() => {
-    if (typeof window === "undefined") return "ro";
-    const saved = localStorage.getItem("civicai_lang");
-    return saved === "ru" || saved === "en" || saved === "ro" ? saved : "ro";
-  });
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [input, setInput] = useState("");
@@ -140,10 +146,6 @@ export function ChatApp() {
   useEffect(() => {
     setLikes(loadLikes());
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem("civicai_lang", lang);
-  }, [lang]);
 
   useEffect(() => {
     if (!ready) return;
@@ -188,13 +190,13 @@ export function ChatApp() {
           data:
             r.role === "assistant"
               ? {
-                  status: r.status || "supported",
-                  answer: r.content,
-                  sources: r.sources || [],
-                  next_action: null,
-                  confidence: "medium",
-                  language: lang,
-                }
+                status: r.status || "supported",
+                answer: r.content,
+                sources: r.sources || [],
+                next_action: null,
+                confidence: "medium",
+                language: lang,
+              }
               : undefined,
         })
       )
@@ -312,11 +314,11 @@ export function ChatApp() {
           ? data.answer && !/^missing\s*$/i.test(String(data.answer).trim())
             ? data.answer
             : tx(
-                lang,
-                "Nu am găsit informația în documentele oficiale pe care le am. Reformulează sau întreabă altceva — te ajut cu plăcere.",
-                "Не нашёл информацию в доступных официальных документах. Переформулируйте или спросите о другом.",
-                "I couldn't find this in the official documents I have. Try rephrasing — happy to help."
-              )
+              lang,
+              "Nu am găsit informația în documentele oficiale pe care le am. Reformulează sau întreabă altceva — te ajut cu plăcere.",
+              "Не нашёл информацию в доступных официальных документах. Переформулируйте или спросите о другом.",
+              "I couldn't find this in the official documents I have. Try rephrasing — happy to help."
+            )
           : data.answer || "";
         copy[copy.length - 1] = {
           role: "assistant",
@@ -429,7 +431,7 @@ export function ChatApp() {
                 className="del"
                 role="button"
                 tabIndex={0}
-                aria-label="Șterge"
+                aria-label={tx(lang, "Șterge", "Удалить", "Delete")}
                 onClick={(e) => {
                   e.stopPropagation();
                   void apiDeleteChat(user.access_token, s.id).then(() => {
@@ -453,13 +455,20 @@ export function ChatApp() {
           <div className="user-line">{user.email}</div>
           {!user.approved && user.role !== "admin" && user.role !== "manager" && (
             <div className="pending-banner">
-              Contul așteaptă confirmarea unui administrator.
+              {tx(
+                lang,
+                "Contul așteaptă confirmarea unui administrator.",
+                "Аккаунт ожидает подтверждения администратора.",
+                "Your account is awaiting administrator approval."
+              )}
             </div>
           )}
           <div className="side-actions">
             {user.role === "admin" || user.role === "manager" ? (
               <Link href="/admin">
-                {user.role === "admin" ? "Administrare" : "Panou manager"}
+                {user.role === "admin"
+                  ? tx(lang, "Administrare", "Администрирование", "Administration")
+                  : tx(lang, "Panou manager", "Панель менеджера", "Manager panel")}
               </Link>
             ) : null}
             <button type="button" onClick={onLogout}>
@@ -475,7 +484,7 @@ export function ChatApp() {
             <button
               type="button"
               className="menu-btn"
-              aria-label="Meniu"
+              aria-label={tx(lang, "Meniu", "Меню", "Menu")}
               onClick={() => setSideOpen(true)}
             >
               ☰
@@ -561,11 +570,11 @@ export function ChatApp() {
                 ? m.data?.answer && !/^missing\s*$/i.test(m.data.answer.trim())
                   ? m.data.answer
                   : tx(
-                      lang,
-                      "Nu am găsit informația în documentele oficiale pe care le am. Reformulează sau întreabă altceva — te ajut cu plăcere.",
-                      "Не нашёл информацию в доступных официальных документах. Переформулируйте или спросите о другом.",
-                      "I couldn't find this in the official documents I have. Try rephrasing — happy to help."
-                    )
+                    lang,
+                    "Nu am găsit informația în documentele oficiale pe care le am. Reformulează sau întreabă altceva — te ajut cu plăcere.",
+                    "Не нашёл информацию в доступных официальных документах. Переформулируйте или спросите о другом.",
+                    "I couldn't find this in the official documents I have. Try rephrasing — happy to help."
+                  )
                 : m.text;
               return (
                 <div
@@ -609,7 +618,7 @@ export function ChatApp() {
                             lang={lang}
                           />
                           {m.data.latency_ms != null && (
-                            <span className="latency" title="Latency">
+                            <span className="latency" title={tx(lang, "Timp de răspuns", "Время ответа", "Response time")}>
                               {m.data.latency_ms} ms
                             </span>
                           )}
@@ -659,7 +668,7 @@ export function ChatApp() {
                         )}
 
                         {srcs.length > 0 && (
-                          <div className="sources" role="list" aria-label="Anexe">
+                          <div className="sources" role="list" aria-label={tx(lang, "Anexe", "Приложения", "Attachments")}>
                             {srcs.map((s, j) => {
                               const hid = `${i}-${j}`;
                               return (
@@ -789,11 +798,11 @@ export function ChatApp() {
                 canChat
                   ? placeholder
                   : tx(
-                      lang,
-                      "Așteaptă aprobarea contului…",
-                      "Ожидайте одобрения…",
-                      "Waiting for account approval…"
-                    )
+                    lang,
+                    "Așteaptă aprobarea contului…",
+                    "Ожидайте одобрения…",
+                    "Waiting for account approval…"
+                  )
               }
               disabled={busy || !canChat}
             />
@@ -972,6 +981,7 @@ function ToolSteps({
                 : "✓"}
           </span>
           <span className="tool-label">
+            {/* this is the spot */}
             {toolLabel(current, lang)}
             {current.optional ? (
               <span className="tool-opt"> · {tx(lang, "opțional", "опц.", "opt.")}</span>

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthProvider";
+import { LanguageSwitcher, useI18n } from "@/components/I18nProvider";
 import { apiLogin, apiRegister } from "@/lib/api";
 
 export default function LoginClient() {
@@ -15,7 +16,7 @@ export default function LoginClient() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [lang, setLang] = useState<"ro" | "ru">("ro");
+  const { t } = useI18n();
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -34,7 +35,7 @@ export default function LoginClient() {
       login(u);
       router.replace(next.startsWith("/") ? next : "/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Autentificare eșuată");
+      setError(err instanceof Error ? err.message : t("auth.authenticationFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -49,12 +50,10 @@ export default function LoginClient() {
       <div className="auth-card">
         <div className="brand-mark">CivicAI</div>
         <h1 className="brand-lg">
-          {mode === "login" ? "Bine ai venit" : "Cont nou"}
+          {mode === "login" ? t("auth.welcomeBack") : t("auth.newAccount")}
         </h1>
         <p className="lede">
-          {lang === "ro"
-            ? "Răspunsuri clare din documentele Primăriei Chișinău — ca de la un coleg care cunoaște dosarul."
-            : "Понятные ответы из документов примэрии Кишинёва — как от коллеги, который знает дело."}
+          {t("auth.description")}
         </p>
         <div className="auth-tabs">
           <button
@@ -62,21 +61,21 @@ export default function LoginClient() {
             className={mode === "login" ? "on" : ""}
             onClick={() => setMode("login")}
           >
-            Autentificare
+            {t("auth.signIn")}
           </button>
           <button
             type="button"
             className={mode === "register" ? "on" : ""}
             onClick={() => setMode("register")}
           >
-            Cont nou
+            {t("auth.newAccount")}
           </button>
         </div>
         <form onSubmit={onSubmit} className="auth-form">
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
+            placeholder={t("auth.email")}
             type="email"
             required
             autoComplete="email"
@@ -84,7 +83,7 @@ export default function LoginClient() {
           <input
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="Parolă (min. 6 caractere)"
+            placeholder={t("auth.passwordHint")}
             type="password"
             minLength={6}
             required
@@ -94,31 +93,15 @@ export default function LoginClient() {
             {submitting
               ? "…"
               : mode === "login"
-                ? "Intră în cont"
-                : "Creează cont"}
+                ? t("auth.enterAccount")
+                : t("auth.createYourAccount")}
           </button>
           {error && <div className="err">{error}</div>}
         </form>
         <p className="hint">
-          După înregistrare, un administrator confirmă contul — durează de obicei
-          puțin.
+          {t("auth.approvalHint")}
         </p>
-        <div className="lang-row">
-          <button
-            type="button"
-            className={lang === "ro" ? "chip on" : "chip"}
-            onClick={() => setLang("ro")}
-          >
-            Română
-          </button>
-          <button
-            type="button"
-            className={lang === "ru" ? "chip on" : "chip"}
-            onClick={() => setLang("ru")}
-          >
-            Русский
-          </button>
-        </div>
+        <LanguageSwitcher />
       </div>
     </main>
   );

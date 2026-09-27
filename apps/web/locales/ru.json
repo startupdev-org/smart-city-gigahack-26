@@ -1,0 +1,19 @@
+{
+  "navigation": { "backToChat": "Назад к чату", "refresh": "Обновить", "signOut": "Выйти" },
+  "auth": {
+    "signIn": "Вход", "createAccount": "Создать аккаунт", "welcomeBack": "С возвращением", "newAccount": "Новый аккаунт",
+    "email": "Эл. почта", "password": "Пароль", "passwordHint": "Пароль (мин. 6 символов)",
+    "enterAccount": "Войти", "createYourAccount": "Создать аккаунт", "authenticationFailed": "Ошибка аутентификации",
+    "description": "Понятные ответы из документов примэрии Кишинёва — как от коллеги, который знает дело.",
+    "approvalHint": "После регистрации администратор подтверждает аккаунт. Обычно это занимает немного времени."
+  },
+  "admin": {
+    "operationalPanel": "Операционная панель", "controlPanel": "Панель управления", "accessDescription": "Доступ доступен администраторам и менеджерам.",
+    "enterPanel": "Войти в панель", "servicesUnavailable": "Некоторые сервисы недоступны:", "overview": "Обзор",
+    "uploadMaterials": "Загрузить материалы", "userRoles": "Пользователи и роли", "costProfit": "Расходы и прибыль", "agentTools": "Инструменты агента", "demoQuestions": "Демо-вопросы",
+    "documents": "Документы", "sources": "Источники", "users": "Пользователи", "feedback": "Отзывы", "search": "Поиск", "delete": "Удалить", "approve": "Подтвердить", "revoke": "Отозвать", "status": "Статус", "actions": "Действия",
+    "searches": "Поиски", "approved": "Подтверждённые", "uploadFromUrl": "По ссылке", "titleOptional": "Название (необязательно)", "downloadIndex": "Загрузить и индексировать",
+    "internalText": "Внутренний текст или заметка", "contentMinimum": "Содержимое (минимум 40 символов)", "saveCorpus": "Сохранить в корпус", "addSource": "Добавить источник", "name": "Название", "rootUrl": "Корневой URL",
+    "indexedDocuments": "Индексированные документы", "searchTitleUrl": "Поиск по названию или URL…", "citizenFeedback": "Отзывы жителей", "noFeedback": "Отзывов пока нет."
+  }
+}
