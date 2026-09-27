@@ -1,0 +1,19 @@
+{
+  "navigation": { "backToChat": "Back to chat", "refresh": "Refresh", "signOut": "Sign out" },
+  "auth": {
+    "signIn": "Sign in", "createAccount": "Create account", "welcomeBack": "Welcome back", "newAccount": "New account",
+    "email": "Email", "password": "Password", "passwordHint": "Password (min. 6 characters)",
+    "enterAccount": "Enter your account", "createYourAccount": "Create your account", "authenticationFailed": "Authentication failed",
+    "description": "Clear answers from Chișinău City Hall documents — like a colleague who knows the case.",
+    "approvalHint": "After registration, an administrator approves your account. This usually takes a little time."
+  },
+  "admin": {
+    "operationalPanel": "Operational panel", "controlPanel": "Control panel", "accessDescription": "Access is available to administrators and managers.",
+    "enterPanel": "Enter panel", "servicesUnavailable": "Some services are unavailable:", "overview": "Overview",
+    "uploadMaterials": "Upload materials", "userRoles": "User roles", "costProfit": "Cost & profit", "agentTools": "Agent tools", "demoQuestions": "Demo questions",
+    "documents": "Documents", "sources": "Sources", "users": "Users", "feedback": "Feedback", "search": "Search", "delete": "Delete", "approve": "Approve", "revoke": "Revoke", "status": "Status", "actions": "Actions",
+    "searches": "Searches", "approved": "Approved", "uploadFromUrl": "Upload from URL", "titleOptional": "Title (optional)", "downloadIndex": "Download and index",
+    "internalText": "Internal text or note", "contentMinimum": "Content (at least 40 characters)", "saveCorpus": "Save to corpus", "addSource": "Add source", "name": "Name", "rootUrl": "Root URL",
+    "indexedDocuments": "Indexed documents", "searchTitleUrl": "Search title or URL…", "citizenFeedback": "Citizen feedback", "noFeedback": "No feedback yet."
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "navigation": { "backToChat": "Înapoi la chat", "refresh": "Reîncarcă", "signOut": "Ieșire" },
+  "auth": {
+    "signIn": "Autentificare", "createAccount": "Creează cont", "welcomeBack": "Bine ai venit", "newAccount": "Cont nou",
+    "email": "Email", "password": "Parolă", "passwordHint": "Parolă (min. 6 caractere)",
+    "enterAccount": "Intră în cont", "createYourAccount": "Creează cont", "authenticationFailed": "Autentificare eșuată",
+    "description": "Răspunsuri clare din documentele Primăriei Chișinău — ca de la un coleg care cunoaște dosarul.",
+    "approvalHint": "După înregistrare, un administrator confirmă contul — durează de obicei puțin."
+  },
+  "admin": {
+    "operationalPanel": "Panou operațional", "controlPanel": "Panou de control", "accessDescription": "Accesul este disponibil administratorilor și managerilor.",
+    "enterPanel": "Intră în panou", "servicesUnavailable": "Unele servicii nu sunt disponibile:", "overview": "Prezentare generală",
+    "uploadMaterials": "Încarcă materiale", "userRoles": "Utilizatori și roluri", "costProfit": "Cost și profit", "agentTools": "Instrumente agent", "demoQuestions": "Întrebări demo",
+    "documents": "Documente", "sources": "Surse", "users": "Utilizatori", "feedback": "Feedback", "search": "Caută", "delete": "Șterge", "approve": "Aprobă", "revoke": "Revocă", "status": "Status", "actions": "Acțiuni",
+    "searches": "Căutări", "approved": "Aprobați", "uploadFromUrl": "Din link", "titleOptional": "Titlu (opțional)", "downloadIndex": "Descarcă și indexează",
+    "internalText": "Text sau notă internă", "contentMinimum": "Conținut (cel puțin 40 de caractere)", "saveCorpus": "Salvează în corpus", "addSource": "Adaugă sursă", "name": "Nume", "rootUrl": "URL rădăcină",
+    "indexedDocuments": "Documente indexate", "searchTitleUrl": "Caută titlu sau URL…", "citizenFeedback": "Feedback cetățeni", "noFeedback": "Încă nu există feedback."
+  }
+}
